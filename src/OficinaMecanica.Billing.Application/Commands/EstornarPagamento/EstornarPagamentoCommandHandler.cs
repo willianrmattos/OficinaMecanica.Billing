@@ -20,6 +20,7 @@ public class EstornarPagamentoCommandHandler : IRequestHandler<EstornarPagamento
     private readonly IPagamentoRepository _pagamentoRepository;
     private readonly IPagamentoGateway _gateway;
     private readonly IIntegrationEventPublisher _publisher;
+    private readonly IMetricasDoBilling _metricas;
     private readonly IUnitOfWork _unitOfWork;
     private readonly TimeProvider _timeProvider;
     private readonly ILogger<EstornarPagamentoCommandHandler> _logger;
@@ -28,6 +29,7 @@ public class EstornarPagamentoCommandHandler : IRequestHandler<EstornarPagamento
         IPagamentoRepository pagamentoRepository,
         IPagamentoGateway gateway,
         IIntegrationEventPublisher publisher,
+        IMetricasDoBilling metricas,
         IUnitOfWork unitOfWork,
         TimeProvider timeProvider,
         ILogger<EstornarPagamentoCommandHandler> logger)
@@ -35,6 +37,7 @@ public class EstornarPagamentoCommandHandler : IRequestHandler<EstornarPagamento
         _pagamentoRepository = pagamentoRepository;
         _gateway = gateway;
         _publisher = publisher;
+        _metricas = metricas;
         _unitOfWork = unitOfWork;
         _timeProvider = timeProvider;
         _logger = logger;
@@ -97,6 +100,7 @@ public class EstornarPagamentoCommandHandler : IRequestHandler<EstornarPagamento
         pagamento.ConfirmarEstorno(gatewayRefundId);
         await _publisher.PublishAsync(MensagensDeIntegracao.PagamentoEstornadoDe(pagamento, agora), cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
+        _metricas.RegistrarPagamentoEstornado();
     }
 
     // Um estorno que não pode acontecer ainda precisa de resposta: sem ela a saga ficaria esperando em Estornando.

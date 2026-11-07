@@ -15,6 +15,7 @@ public class GerarOrcamentoCommandHandler : IRequestHandler<GerarOrcamentoComman
     private readonly IOrcamentoRepository _orcamentoRepository;
     private readonly ICancelamentoPrevioRepository _cancelamentoPrevioRepository;
     private readonly IIntegrationEventPublisher _publisher;
+    private readonly IMetricasDoBilling _metricas;
     private readonly IUnitOfWork _unitOfWork;
     private readonly TimeProvider _timeProvider;
 
@@ -22,12 +23,14 @@ public class GerarOrcamentoCommandHandler : IRequestHandler<GerarOrcamentoComman
         IOrcamentoRepository orcamentoRepository,
         ICancelamentoPrevioRepository cancelamentoPrevioRepository,
         IIntegrationEventPublisher publisher,
+        IMetricasDoBilling metricas,
         IUnitOfWork unitOfWork,
         TimeProvider timeProvider)
     {
         _orcamentoRepository = orcamentoRepository;
         _cancelamentoPrevioRepository = cancelamentoPrevioRepository;
         _publisher = publisher;
+        _metricas = metricas;
         _unitOfWork = unitOfWork;
         _timeProvider = timeProvider;
     }
@@ -66,6 +69,7 @@ public class GerarOrcamentoCommandHandler : IRequestHandler<GerarOrcamentoComman
         await _orcamentoRepository.AdicionarAsync(orcamento, cancellationToken);
         await _publisher.PublishAsync(MensagensDeIntegracao.OrcamentoGeradoDe(orcamento, agora), cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
+        _metricas.RegistrarOrcamentoGerado();
     }
 
     private async Task PublicarNaoGeradoAsync(Guid ordemDeServicoId, string motivo, DateTimeOffset agora, CancellationToken cancellationToken)

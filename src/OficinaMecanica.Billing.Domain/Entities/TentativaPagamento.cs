@@ -15,6 +15,10 @@ public class TentativaPagamento : Entity
     public decimal ValorGateway { get; private set; }
     public DateTimeOffset AtualizadoEm { get; private set; }
 
+    // Só é preenchido quando esta tentativa foi uma cobrança em duplicidade (segunda aprovação do mesmo
+    // Pagamento) e o valor já voltou ao pagador; fica nulo em toda tentativa que não precisa de estorno próprio.
+    public string? GatewayRefundId { get; private set; }
+
     public bool Aprovada => EhStatusAprovado(StatusGateway);
 
     private TentativaPagamento() { } // EF Core
@@ -32,6 +36,8 @@ public class TentativaPagamento : Entity
         ValorGateway = valorGateway;
         AtualizadoEm = em;
     }
+
+    internal void RegistrarEstornoDeDuplicidade(string gatewayRefundId) => GatewayRefundId ??= gatewayRefundId;
 
     public static bool EhStatusAprovado(string statusGateway) =>
         string.Equals(statusGateway, StatusGatewayAprovado, StringComparison.OrdinalIgnoreCase);

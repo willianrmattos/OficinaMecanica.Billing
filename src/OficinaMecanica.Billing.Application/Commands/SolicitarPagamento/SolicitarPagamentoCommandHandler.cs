@@ -23,6 +23,7 @@ public class SolicitarPagamentoCommandHandler : IRequestHandler<SolicitarPagamen
     private readonly ICancelamentoPrevioRepository _cancelamentoPrevioRepository;
     private readonly IPagamentoGateway _gateway;
     private readonly IIntegrationEventPublisher _publisher;
+    private readonly IMetricasDoBilling _metricas;
     private readonly IUnitOfWork _unitOfWork;
     private readonly TimeProvider _timeProvider;
     private readonly ILogger<SolicitarPagamentoCommandHandler> _logger;
@@ -33,6 +34,7 @@ public class SolicitarPagamentoCommandHandler : IRequestHandler<SolicitarPagamen
         ICancelamentoPrevioRepository cancelamentoPrevioRepository,
         IPagamentoGateway gateway,
         IIntegrationEventPublisher publisher,
+        IMetricasDoBilling metricas,
         IUnitOfWork unitOfWork,
         TimeProvider timeProvider,
         ILogger<SolicitarPagamentoCommandHandler> logger)
@@ -42,6 +44,7 @@ public class SolicitarPagamentoCommandHandler : IRequestHandler<SolicitarPagamen
         _cancelamentoPrevioRepository = cancelamentoPrevioRepository;
         _gateway = gateway;
         _publisher = publisher;
+        _metricas = metricas;
         _unitOfWork = unitOfWork;
         _timeProvider = timeProvider;
         _logger = logger;
@@ -162,9 +165,13 @@ public class SolicitarPagamentoCommandHandler : IRequestHandler<SolicitarPagamen
         {
             // Optei por tratar como fato de negócio só a recusa permanente do gateway; timeout e 5xx propagam
             // para o retry do consumidor e o pagamento pré-persistido sem preferência é retomado na reentrega.
-            _logger.LogWarning(ex, "O gateway recusou criar a preferência do pagamento {PagamentoId}.", pagamento.Id);
+            // Um 4xx definitivo pode ser defeito do nosso próprio request e aqui ele cancela a ordem do cliente,
+            // então registro como erro e conto numa métrica própria para alguém ser avisado. O aviso sai depois do
+            // SaveChanges: se o save falhar, a reentrega refaz a chamada ao gateway e avisa uma vez só.
             pagamento.Cancelar(MotivoRecusaDoGateway);
             await PublicarNaoSolicitadoAsync(pagamento.OrdemDeServicoId, MotivoRecusaDoGateway, agora, cancellationToken);
+            _logger.LogError(ex, "O gateway recusou criar a preferência do pagamento {PagamentoId}; a solicitação foi cancelada.", pagamento.Id);
+            _metricas.RegistrarPagamentoRecusadoPeloGateway();
             return;
         }
 

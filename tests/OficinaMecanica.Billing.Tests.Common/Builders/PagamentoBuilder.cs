@@ -97,6 +97,16 @@ public class PagamentoBuilder
         return pagamento;
     }
 
+    // Pagamento aprovado com um segundo pagamento do gateway tambem aprovado (cobranca em duplicidade): a tentativa
+    // duplicada fica registrada e ConfirmarAprovacao devolve AprovacaoDuplicada, sem trocar o pagamento adotado.
+    public Pagamento AprovadoComAprovacaoDuplicada(string gatewayPaymentIdDuplicado = "5550001")
+    {
+        var pagamento = Aprovado();
+        pagamento.RegistrarTentativa(gatewayPaymentIdDuplicado, "approved", "accredited", _valor, _agora);
+        pagamento.ConfirmarAprovacao(gatewayPaymentIdDuplicado, _valor, "BRL", pagamento.Id.ToString(), _agora);
+        return pagamento;
+    }
+
     private void ConfirmarAprovacao(Pagamento pagamento)
     {
         pagamento.RegistrarTentativa(_gatewayPaymentId, "approved", "accredited", _valor, _agora);

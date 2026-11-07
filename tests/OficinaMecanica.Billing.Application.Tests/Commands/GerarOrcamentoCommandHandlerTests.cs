@@ -14,6 +14,7 @@ public class GerarOrcamentoCommandHandlerTests
     private readonly Mock<IOrcamentoRepository> _orcamentoRepositoryMock = new();
     private readonly Mock<ICancelamentoPrevioRepository> _cancelamentoPrevioRepositoryMock = new();
     private readonly Mock<IIntegrationEventPublisher> _publisherMock = new();
+    private readonly Mock<IMetricasDoBilling> _metricasMock = new();
     private readonly Mock<IUnitOfWork> _unitOfWorkMock = new();
     private readonly RelogioFixo _relogio = new();
     private readonly GravadorDeChamadas _gravador;
@@ -24,7 +25,7 @@ public class GerarOrcamentoCommandHandlerTests
         _gravador = new GravadorDeChamadas(_publisherMock, _unitOfWorkMock);
         _handler = new GerarOrcamentoCommandHandler(
             _orcamentoRepositoryMock.Object, _cancelamentoPrevioRepositoryMock.Object,
-            _publisherMock.Object, _unitOfWorkMock.Object, _relogio);
+            _publisherMock.Object, _metricasMock.Object, _unitOfWorkMock.Object, _relogio);
     }
 
     [Fact]
@@ -53,6 +54,22 @@ public class GerarOrcamentoCommandHandlerTests
         evento.ValidoAte.Should().Be(command.ValidoAte);
         evento.OcorridoEm.Should().Be(_relogio.GetUtcNow());
         evento.MessageId.Should().NotBe(Guid.Empty);
+    }
+
+    [Fact]
+    public async Task Handle_DadosValidos_DeveRegistrarAMetricaDeOrcamentoGerado()
+    {
+        await _handler.Handle(new GerarOrcamentoCommandBuilder().Build(), CancellationToken.None);
+
+        _metricasMock.Verify(m => m.RegistrarOrcamentoGerado(), Times.Once);
+    }
+
+    [Fact]
+    public async Task Handle_DadosInvalidos_NaoDeveRegistrarAMetricaDeOrcamentoGerado()
+    {
+        await _handler.Handle(new GerarOrcamentoCommandBuilder().SemItens().Build(), CancellationToken.None);
+
+        _metricasMock.Verify(m => m.RegistrarOrcamentoGerado(), Times.Never);
     }
 
     [Fact]

@@ -142,6 +142,41 @@ public class ProcessarWebhookPagamentoCommandHandlerTests
     }
 
     [Fact]
+    public async Task Handle_PagamentoAprovadoNoGateway_DeveRegistrarAMetricaDePagamentoAprovado()
+    {
+        var pagamento = DadoPagamento(new PagamentoBuilder().ComPreferencia());
+        DadoGateway(GatewayAprovadoPara(pagamento));
+
+        await _handler.Handle(Comando(), CancellationToken.None);
+
+        _metricasMock.Verify(m => m.RegistrarPagamentoAprovado(), Times.Once);
+        _metricasMock.VerifyNoOtherCalls();
+    }
+
+    [Fact]
+    public async Task Handle_TentativaRecusadaPeloGateway_DeveRegistrarAMetricaDePagamentoRecusado()
+    {
+        var pagamento = DadoPagamento(new PagamentoBuilder().ComPreferencia());
+        DadoGateway(new PagamentoGatewayDtoBuilder().ComId(DataId).DoPagamento(pagamento).ComStatus("rejected", "cc_rejected_other_reason").Build());
+
+        await _handler.Handle(Comando(), CancellationToken.None);
+
+        _metricasMock.Verify(m => m.RegistrarPagamentoRecusado(), Times.Once);
+        _metricasMock.VerifyNoOtherCalls();
+    }
+
+    [Fact]
+    public async Task Handle_TentativaPendente_NaoDeveRegistrarMetricaDePagamento()
+    {
+        var pagamento = DadoPagamento(new PagamentoBuilder().ComPreferencia());
+        DadoGateway(new PagamentoGatewayDtoBuilder().ComId(DataId).DoPagamento(pagamento).ComStatus("pending").Build());
+
+        await _handler.Handle(Comando(), CancellationToken.None);
+
+        _metricasMock.VerifyNoOtherCalls();
+    }
+
+    [Fact]
     public async Task Handle_PagamentoAprovadoNoGateway_DeveConsultarOGatewayEPublicarAntesDeSalvar()
     {
         var pagamento = DadoPagamento(new PagamentoBuilder().ComPreferencia());
@@ -326,13 +361,14 @@ public class ProcessarWebhookPagamentoCommandHandlerTests
     }
 
     [Fact]
-    public async Task Handle_AprovacaoSemDivergencia_NaoDeveRegistrarMetricaNenhuma()
+    public async Task Handle_AprovacaoSemDivergencia_NaoDeveRegistrarMetricaDeExcecao()
     {
         var pagamento = DadoPagamento(new PagamentoBuilder().ComPreferencia());
         DadoGateway(GatewayAprovadoPara(pagamento));
 
         await _handler.Handle(Comando(), CancellationToken.None);
 
+        _metricasMock.Verify(m => m.RegistrarPagamentoAprovado(), Times.Once());
         _metricasMock.VerifyNoOtherCalls();
     }
 
@@ -481,5 +517,88 @@ public class ProcessarWebhookPagamentoCommandHandlerTests
         await act.Should().ThrowAsync<HttpRequestException>();
         _unitOfWorkMock.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never());
         _gravador.Mensagens.Should().BeEmpty();
+    }
+
+    private void DadoSaveChangesQueFalha() =>
+        _unitOfWorkMock
+            .Setup(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("conflito de concorrência"));
+
+    [Fact]
+    public async Task Handle_Divergencia_DeveContarELogarSoDepoisDoSaveChanges()
+    {
+        var pagamento = DadoPagamento(new PagamentoBuilder().ComValor(100m).ComPreferencia());
+        DadoGateway(new PagamentoGatewayDtoBuilder().ComId(DataId).DoPagamento(pagamento).ComValor(150m).Build());
+        _metricasMock.Setup(m => m.RegistrarDivergenciaDePagamento()).Callback(() => _gravador.Registrar("Metrica"));
+
+        await _handler.Handle(Comando(), CancellationToken.None);
+
+        _gravador.Ordem.Should().Equal("Save", "Metrica");
+    }
+
+    [Fact]
+    public async Task Handle_SaveChangesFalhaNaDivergencia_NaoDeveContarNemLogar()
+    {
+        var pagamento = DadoPagamento(new PagamentoBuilder().ComValor(100m).ComPreferencia());
+        DadoGateway(new PagamentoGatewayDtoBuilder().ComId(DataId).DoPagamento(pagamento).ComValor(150m).Build());
+        DadoSaveChangesQueFalha();
+
+        var act = () => _handler.Handle(Comando(), CancellationToken.None);
+
+        await act.Should().ThrowAsync<InvalidOperationException>();
+        _metricasMock.Verify(m => m.RegistrarDivergenciaDePagamento(), Times.Never());
+        _loggerMock.VerificarLog(LogLevel.Error, "dados divergentes", Times.Never());
+    }
+
+    [Fact]
+    public async Task Handle_AprovacaoTardia_DeveContarELogarSoDepoisDoSaveChanges()
+    {
+        var pagamento = DadoPagamento(new PagamentoBuilder().Cancelado());
+        DadoGateway(GatewayAprovadoPara(pagamento));
+        _metricasMock.Setup(m => m.RegistrarAprovacaoTardia()).Callback(() => _gravador.Registrar("Metrica"));
+
+        await _handler.Handle(Comando(), CancellationToken.None);
+
+        _gravador.Ordem.Should().Equal("Send", "Save", "Metrica");
+    }
+
+    [Fact]
+    public async Task Handle_SaveChangesFalhaNaAprovacaoTardia_NaoDeveContarNemLogar()
+    {
+        var pagamento = DadoPagamento(new PagamentoBuilder().Cancelado());
+        DadoGateway(GatewayAprovadoPara(pagamento));
+        DadoSaveChangesQueFalha();
+
+        var act = () => _handler.Handle(Comando(), CancellationToken.None);
+
+        await act.Should().ThrowAsync<InvalidOperationException>();
+        _metricasMock.Verify(m => m.RegistrarAprovacaoTardia(), Times.Never());
+        _loggerMock.VerificarLog(LogLevel.Warning, "estorno automático solicitado", Times.Never());
+    }
+
+    [Fact]
+    public async Task Handle_AprovacaoDuplicada_DeveContarELogarSoDepoisDoSaveChanges()
+    {
+        var pagamento = DadoPagamento(new PagamentoBuilder().ComGatewayPaymentId("999").Aprovado());
+        DadoGateway(new PagamentoGatewayDtoBuilder().ComId(DataId).DoPagamento(pagamento).Build());
+        _metricasMock.Setup(m => m.RegistrarAprovacaoDuplicada()).Callback(() => _gravador.Registrar("Metrica"));
+
+        await _handler.Handle(Comando(), CancellationToken.None);
+
+        _gravador.Ordem.Should().Equal("Save", "Metrica");
+    }
+
+    [Fact]
+    public async Task Handle_SaveChangesFalhaNaAprovacaoDuplicada_NaoDeveContarNemLogar()
+    {
+        var pagamento = DadoPagamento(new PagamentoBuilder().ComGatewayPaymentId("999").Aprovado());
+        DadoGateway(new PagamentoGatewayDtoBuilder().ComId(DataId).DoPagamento(pagamento).Build());
+        DadoSaveChangesQueFalha();
+
+        var act = () => _handler.Handle(Comando(), CancellationToken.None);
+
+        await act.Should().ThrowAsync<InvalidOperationException>();
+        _metricasMock.Verify(m => m.RegistrarAprovacaoDuplicada(), Times.Never());
+        _loggerMock.VerificarLog(LogLevel.Warning, "também foi aprovado", Times.Never());
     }
 }

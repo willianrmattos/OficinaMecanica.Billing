@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Cobertura de linhas do servico inteiro (formato OpenCover, que o ReportGenerator e o SonarCloud leem).
+     Entram so os assemblies do servico; os projetos de teste e o Tests.Common ficam de fora. -->
+<RunSettings>
+  <DataCollectionRunSettings>
+    <DataCollectors>
+      <DataCollector friendlyName="XPlat Code Coverage">
+        <Configuration>
+          <Format>opencover</Format>
+          <Include>[OficinaMecanica.Billing.Domain]*,[OficinaMecanica.Billing.Application]*,[OficinaMecanica.Billing.Infrastructure]*,[OficinaMecanica.Billing.API]*,[OficinaMecanica.Contracts]*</Include>
+          <ExcludeByAttribute>GeneratedCodeAttribute,CompilerGeneratedAttribute,ExcludeFromCodeCoverageAttribute</ExcludeByAttribute>
+          <IncludeTestAssembly>false</IncludeTestAssembly>
+          <SingleHit>false</SingleHit>
+          <SkipAutoProps>false</SkipAutoProps>
+        </Configuration>
+      </DataCollector>
+    </DataCollectors>
+  </DataCollectionRunSettings>
+</RunSettings>

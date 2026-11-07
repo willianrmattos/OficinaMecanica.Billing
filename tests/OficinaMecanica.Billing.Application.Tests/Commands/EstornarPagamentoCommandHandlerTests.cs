@@ -17,6 +17,7 @@ public class EstornarPagamentoCommandHandlerTests
     private readonly Mock<IPagamentoRepository> _pagamentoRepositoryMock = new();
     private readonly Mock<IPagamentoGateway> _gatewayMock = new();
     private readonly Mock<IIntegrationEventPublisher> _publisherMock = new();
+    private readonly Mock<IMetricasDoBilling> _metricasMock = new();
     private readonly Mock<IUnitOfWork> _unitOfWorkMock = new();
     private readonly Mock<ILogger<EstornarPagamentoCommandHandler>> _loggerMock = new();
     private readonly RelogioFixo _relogio = new();
@@ -31,8 +32,8 @@ public class EstornarPagamentoCommandHandlerTests
             .Callback(() => _gravador.Registrar("Gateway"))
             .ReturnsAsync("refund-987");
         _handler = new EstornarPagamentoCommandHandler(
-            _pagamentoRepositoryMock.Object, _gatewayMock.Object, _publisherMock.Object, _unitOfWorkMock.Object,
-            _relogio, _loggerMock.Object);
+            _pagamentoRepositoryMock.Object, _gatewayMock.Object, _publisherMock.Object, _metricasMock.Object,
+            _unitOfWorkMock.Object, _relogio, _loggerMock.Object);
     }
 
     private Pagamento DadoPagamento(Pagamento pagamento)
@@ -67,6 +68,27 @@ public class EstornarPagamentoCommandHandlerTests
         evento.GatewayRefundId.Should().Be("refund-987");
         evento.OcorridoEm.Should().Be(_relogio.GetUtcNow());
         _gravador.Publicadas<EstornoFalhou>().Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Handle_EstornoConcluido_DeveRegistrarAMetricaDePagamentoEstornado()
+    {
+        var pagamento = DadoPagamento(new PagamentoBuilder().Aprovado());
+
+        await _handler.Handle(ComandoPara(pagamento), CancellationToken.None);
+
+        _metricasMock.Verify(m => m.RegistrarPagamentoEstornado(), Times.Once);
+    }
+
+    [Fact]
+    public async Task Handle_GatewayFalhaNoEstorno_NaoDeveRegistrarAMetricaDePagamentoEstornado()
+    {
+        var pagamento = DadoPagamento(new PagamentoBuilder().Aprovado());
+        DadoGatewayFalhando(new HttpRequestException("timeout"));
+
+        await _handler.Handle(ComandoPara(pagamento), CancellationToken.None);
+
+        _metricasMock.Verify(m => m.RegistrarPagamentoEstornado(), Times.Never);
     }
 
     [Fact]

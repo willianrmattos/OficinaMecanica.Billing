@@ -1,5 +1,5 @@
 using FluentAssertions;
-using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Logging;
 using OficinaMecanica.Billing.Application.Commands.SolicitarPagamento;
 using OficinaMecanica.Billing.Application.DTOs;
 using OficinaMecanica.Billing.Application.Exceptions;
@@ -21,6 +21,8 @@ public class SolicitarPagamentoCommandHandlerTests
     private readonly Mock<ICancelamentoPrevioRepository> _cancelamentoPrevioRepositoryMock = new();
     private readonly Mock<IPagamentoGateway> _gatewayMock = new();
     private readonly Mock<IIntegrationEventPublisher> _publisherMock = new();
+    private readonly Mock<IMetricasDoBilling> _metricasMock = new();
+    private readonly Mock<ILogger<SolicitarPagamentoCommandHandler>> _loggerMock = new();
     private readonly Mock<IUnitOfWork> _unitOfWorkMock = new();
     private readonly RelogioFixo _relogio = new();
     private readonly GravadorDeChamadas _gravador;
@@ -40,8 +42,8 @@ public class SolicitarPagamentoCommandHandlerTests
 
         _handler = new SolicitarPagamentoCommandHandler(
             _orcamentoRepositoryMock.Object, _pagamentoRepositoryMock.Object, _cancelamentoPrevioRepositoryMock.Object,
-            _gatewayMock.Object, _publisherMock.Object, _unitOfWorkMock.Object, _relogio,
-            NullLogger<SolicitarPagamentoCommandHandler>.Instance);
+            _gatewayMock.Object, _publisherMock.Object, _metricasMock.Object, _unitOfWorkMock.Object, _relogio,
+            _loggerMock.Object);
     }
 
     private Orcamento DadoOrcamento(Orcamento orcamento)
@@ -213,6 +215,30 @@ public class SolicitarPagamentoCommandHandlerTests
         evento.OrdemDeServicoId.Should().Be(orcamento.OrdemDeServicoId);
         evento.Motivo.Should().Be("O gateway recusou a criação do pagamento.");
         _gravador.Ordem.Should().Equal("Save", "Gateway", "Publish", "Save");
+    }
+
+    [Fact]
+    public async Task Handle_GatewayRecusaPermanentemente_DeveRegistrarLogDeErroEAMetricaDeRecusaDoGateway()
+    {
+        var orcamento = DadoOrcamento(new OrcamentoBuilder().Gerado());
+        _gatewayMock
+            .Setup(g => g.CriarPreferenciaAsync(It.IsAny<CriarPreferenciaGatewayRequest>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new PagamentoRecusadoPeloGatewayException("400 invalid_items"));
+
+        await _handler.Handle(CommandPara(orcamento), CancellationToken.None);
+
+        _loggerMock.VerificarLog(LogLevel.Error, _adicionado!.Id.ToString());
+        _metricasMock.Verify(m => m.RegistrarPagamentoRecusadoPeloGateway(), Times.Once);
+    }
+
+    [Fact]
+    public async Task Handle_PreferenciaCriada_NaoDeveRegistrarMetricaDeRecusaDoGateway()
+    {
+        var orcamento = DadoOrcamento(new OrcamentoBuilder().Gerado());
+
+        await _handler.Handle(CommandPara(orcamento), CancellationToken.None);
+
+        _metricasMock.Verify(m => m.RegistrarPagamentoRecusadoPeloGateway(), Times.Never);
     }
 
     [Theory]
@@ -405,5 +431,40 @@ public class SolicitarPagamentoCommandHandlerTests
         await _handler.Handle(CommandPara(orcamento), CancellationToken.None);
 
         _gravador.Publicadas<PagamentoSolicitado>().Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task Handle_GatewayRecusaPermanentemente_DeveContarAMetricaSoDepoisDoSaveChangesFinal()
+    {
+        var orcamento = DadoOrcamento(new OrcamentoBuilder().Gerado());
+        _gatewayMock
+            .Setup(g => g.CriarPreferenciaAsync(It.IsAny<CriarPreferenciaGatewayRequest>(), It.IsAny<CancellationToken>()))
+            .Callback(() => _gravador.Registrar("Gateway"))
+            .ThrowsAsync(new PagamentoRecusadoPeloGatewayException("400 invalid_items"));
+        _metricasMock.Setup(m => m.RegistrarPagamentoRecusadoPeloGateway()).Callback(() => _gravador.Registrar("Metrica"));
+
+        await _handler.Handle(CommandPara(orcamento), CancellationToken.None);
+
+        _gravador.Ordem.Should().Equal("Save", "Gateway", "Publish", "Save", "Metrica");
+    }
+
+    [Fact]
+    public async Task Handle_SaveChangesFinalFalhaNaRecusaDoGateway_NaoDeveAvisarNemContar()
+    {
+        var orcamento = DadoOrcamento(new OrcamentoBuilder().Gerado());
+        _gatewayMock
+            .Setup(g => g.CriarPreferenciaAsync(It.IsAny<CriarPreferenciaGatewayRequest>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new PagamentoRecusadoPeloGatewayException("400 invalid_items"));
+        // 1o Save: pré-persistência do pagamento; 2o Save: o final, que falha.
+        _unitOfWorkMock
+            .SetupSequence(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(1)
+            .ThrowsAsync(new InvalidOperationException("conflito de concorrência"));
+
+        var act = () => _handler.Handle(CommandPara(orcamento), CancellationToken.None);
+
+        await act.Should().ThrowAsync<InvalidOperationException>();
+        _metricasMock.Verify(m => m.RegistrarPagamentoRecusadoPeloGateway(), Times.Never);
+        _loggerMock.VerificarLog(LogLevel.Error, "recusou criar a preferência", Times.Never());
     }
 }

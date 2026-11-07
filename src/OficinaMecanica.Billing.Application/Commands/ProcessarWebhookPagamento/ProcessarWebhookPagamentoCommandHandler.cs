@@ -15,6 +15,7 @@ namespace OficinaMecanica.Billing.Application.Commands.ProcessarWebhookPagamento
 public class ProcessarWebhookPagamentoCommandHandler : IRequestHandler<ProcessarWebhookPagamentoCommand>
 {
     private const string MotivoEstornoAutomatico = "Pagamento aprovado depois de cancelado ou expirado.";
+    private const string StatusGatewayRecusado = "rejected";
 
     private readonly IAssinaturaWebhookValidator _assinaturaValidator;
     private readonly IWebhookRecebidoRepository _webhookRepository;
@@ -92,6 +93,8 @@ public class ProcessarWebhookPagamentoCommandHandler : IRequestHandler<Processar
         if (!TentativaPagamento.EhStatusAprovado(pagamentoGateway.Status))
         {
             await ConcluirAsync(recebido, cancellationToken);
+            if (string.Equals(pagamentoGateway.Status, StatusGatewayRecusado, StringComparison.OrdinalIgnoreCase))
+                _metricas.RegistrarPagamentoRecusado();
             return;
         }
 
@@ -105,8 +108,10 @@ public class ProcessarWebhookPagamentoCommandHandler : IRequestHandler<Processar
         }
         catch (DomainException ex)
         {
-            RegistrarDivergencia(pagamento, pagamentoGateway, ex);
+            // Log e métrica dos casos que o webhook engole só saem depois do SaveChanges: se o save falhar, a API responde erro
+            // e o gateway reentrega, então o sinal não é emitido por um processamento que não chegou a ser persistido.
             await ConcluirAsync(recebido, cancellationToken);
+            RegistrarDivergencia(pagamento, pagamentoGateway, ex);
             return;
         }
 
@@ -121,8 +126,8 @@ public class ProcessarWebhookPagamentoCommandHandler : IRequestHandler<Processar
                 break;
 
             case ResultadoAprovacao.AprovacaoDuplicada:
-                RegistrarAprovacaoDuplicada(pagamento, pagamentoGateway);
                 await ConcluirAsync(recebido, cancellationToken);
+                RegistrarAprovacaoDuplicada(pagamento, pagamentoGateway);
                 break;
 
             default:
@@ -148,6 +153,7 @@ public class ProcessarWebhookPagamentoCommandHandler : IRequestHandler<Processar
 
         await _publisher.PublishAsync(MensagensDeIntegracao.PagamentoAprovadoDe(pagamento, agora), cancellationToken);
         await ConcluirAsync(recebido, cancellationToken);
+        _metricas.RegistrarPagamentoAprovado();
     }
 
     // Optei por mandar o estorno como comando para a fila do próprio Billing em vez de executá-lo aqui: a
@@ -160,15 +166,15 @@ public class ProcessarWebhookPagamentoCommandHandler : IRequestHandler<Processar
         DateTimeOffset agora,
         CancellationToken cancellationToken)
     {
+        await _publisher.SendAsync(
+            Filas.Billing, MensagensDeIntegracao.EstornarPagamentoDe(pagamento, MotivoEstornoAutomatico, agora), cancellationToken);
+        await ConcluirAsync(recebido, cancellationToken);
+
         if (!jaEraAprovacaoTardia)
         {
             _logger.LogWarning("Pagamento {PagamentoId} aprovado no gateway depois de {Status}; estorno automático solicitado.", pagamento.Id, pagamento.Status);
             _metricas.RegistrarAprovacaoTardia();
         }
-
-        await _publisher.SendAsync(
-            Filas.Billing, MensagensDeIntegracao.EstornarPagamentoDe(pagamento, MotivoEstornoAutomatico, agora), cancellationToken);
-        await ConcluirAsync(recebido, cancellationToken);
     }
 
     private void RegistrarDivergencia(Pagamento pagamento, PagamentoGatewayDto pagamentoGateway, DomainException ex)
@@ -184,7 +190,7 @@ public class ProcessarWebhookPagamentoCommandHandler : IRequestHandler<Processar
     private void RegistrarAprovacaoDuplicada(Pagamento pagamento, PagamentoGatewayDto pagamentoGateway)
     {
         _logger.LogWarning(
-            "Pagamento {PagamentoId} já aprovado pelo pagamento {GatewayPaymentIdAprovado} do gateway; o pagamento {GatewayPaymentIdDuplicado} também foi aprovado e precisa de estorno manual.",
+            "Pagamento {PagamentoId} já aprovado pelo pagamento {GatewayPaymentIdAprovado} do gateway; o pagamento {GatewayPaymentIdDuplicado} também foi aprovado e será estornado pela reconciliação.",
             pagamento.Id, pagamento.GatewayPaymentIdAprovado, pagamentoGateway.Id);
         _metricas.RegistrarAprovacaoDuplicada();
     }

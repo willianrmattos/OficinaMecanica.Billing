@@ -28,6 +28,13 @@ public class Pagamento : AggregateRoot
     private readonly List<TentativaPagamento> _tentativas = new();
     public IReadOnlyCollection<TentativaPagamento> Tentativas => _tentativas.AsReadOnly();
 
+    // Verdadeiro enquanto o dinheiro de um pagamento aprovado ainda precisa voltar: estorno em curso ou que
+    // falhou, ou aprovação tardia (pagamento já cancelado/expirado) cujo estorno nem começou. É o critério do
+    // reconciliador, que reenvia o comando de estorno enquanto isso for verdade.
+    public bool EstornoPendente =>
+        Status is StatusPagamento.Estornando or StatusPagamento.EstornoFalhou
+        || (AprovacaoTardia && Status is StatusPagamento.Cancelado or StatusPagamento.Expirado);
+
     private Pagamento() { } // EF Core
 
     public Pagamento(Guid orcamentoId, Guid ordemDeServicoId, decimal valor, DateTimeOffset expiraEm, DateTimeOffset agora)
@@ -133,6 +140,29 @@ public class Pagamento : AggregateRoot
         }
     }
 
+    // Tentativas aprovadas no gateway que não são a que o pagamento adotou: cobranças em duplicidade que ainda
+    // não foram devolvidas. Sem pagamento adotado não há "duplicada" (uma aprovação divergente não conta aqui).
+    public IReadOnlyList<TentativaPagamento> AprovacoesDuplicadasSemEstorno() =>
+        GatewayPaymentIdAprovado is null
+            ? Array.Empty<TentativaPagamento>()
+            : _tentativas
+                .Where(t => t.Aprovada && t.GatewayPaymentId != GatewayPaymentIdAprovado && t.GatewayRefundId is null)
+                .ToList();
+
+    public void RegistrarEstornoDeAprovacaoDuplicada(string gatewayPaymentId, string gatewayRefundId)
+    {
+        if (string.IsNullOrWhiteSpace(gatewayRefundId))
+            throw new DomainException("O identificador do estorno no gateway é obrigatório.");
+
+        var tentativa = _tentativas.FirstOrDefault(t => t.GatewayPaymentId == gatewayPaymentId)
+            ?? throw new DomainException("A tentativa de pagamento informada não existe neste pagamento.");
+
+        if (!tentativa.Aprovada || tentativa.GatewayPaymentId == GatewayPaymentIdAprovado)
+            throw new DomainException("Só uma aprovação duplicada, diferente da que o pagamento adotou, pode ser estornada por aqui.");
+
+        tentativa.RegistrarEstornoDeDuplicidade(gatewayRefundId);
+    }
+
     public ResultadoCancelamentoPagamento Cancelar(string motivo)
     {
         switch (Status)
@@ -184,6 +214,20 @@ public class Pagamento : AggregateRoot
             Estorno.Reabrir();
 
         return gatewayPaymentId;
+    }
+
+    // Verdadeiro depois que o reconciliador desistiu de reenviar o estorno (ver AbandonarEstorno).
+    public bool EstornoAbandonado => Estorno?.AbandonadoEm is not null;
+
+    // Devolve verdadeiro só na transição para "abandonado", para quem chama avisar uma vez por caso.
+    public bool AbandonarEstorno(DateTimeOffset agora)
+    {
+        var estorno = EstornoEmAndamento;
+        if (estorno.AbandonadoEm is not null)
+            return false;
+
+        estorno.MarcarComoAbandonado(agora);
+        return true;
     }
 
     public void ConfirmarEstorno(string gatewayRefundId)
