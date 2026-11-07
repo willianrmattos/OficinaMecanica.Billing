@@ -1,0 +1,2 @@
+# Goldens dos contratos de mensagem: LF fixo para o checksum entre repositorios nao depender do autocrlf.
+tests/**/Golden/*.json text eol=lf
