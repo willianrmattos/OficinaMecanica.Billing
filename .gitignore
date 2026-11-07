@@ -1,0 +1,72 @@
+# Build
+bin/
+obj/
+out/
+publish/
+
+# Visual Studio
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+*.rsuser
+
+# Rider
+.idea/
+*.sln.iml
+
+# VS Code
+.vscode/
+!.vscode/extensions.json
+
+# Claude Code - mantem .claude/agents/ versionado, ignora o resto (settings locais etc.)
+.claude/*
+!.claude/agents
+
+# NuGet
+*.nupkg
+*.snupkg
+packages/
+project.lock.json
+project.fragment.lock.json
+artifacts/
+
+# .NET
+project.assets.json
+*.csproj.nuget.*
+
+# Local-only
+bin/
+obj/
+
+# Logs
+*.log
+logs/
+
+# Environment / secrets
+appsettings.Local.json
+appsettings.*.local.json
+.env
+.env.*
+!.env.example
+secrets.json
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Test results
+TestResults/
+coverage/
+*.trx
+*.coveragexml
+*.coverage
+
+# Temporary files
+*.tmp
+*.temp
+*.swp
+*~
+
