@@ -73,7 +73,7 @@ services:
     restart: unless-stopped
 
   rabbitmq:
-    image: rabbitmq:4-management
+    image: rabbitmq:4.4.0-management
     container_name: ${BILLING_CONTAINER_PREFIX:-oficinamecanica-billing}-rabbitmq
     profiles: ["standalone"]
     environment:
