@@ -87,6 +87,15 @@ public sealed class AmbienteInfra : IAsyncDisposable
 
     public HttpClient CriarClienteHttp() => _api!.CreateClient();
 
+    // Simula o restart do processo: a API sobe de novo sobre o mesmo banco e o mesmo virtual host, mas com o estado em
+    // memória (inclusive o gateway Fake) zerado. Os clientes HTTP criados antes deixam de servir.
+    public async Task ReiniciarApiAsync()
+    {
+        await _api!.DisposeAsync();
+        _api = new ApiInfraFactory(Configuracao());
+        _ = _api.Server;
+    }
+
     private async Task PrepararAsync()
     {
         await _infra.CriarVirtualHostAsync(VirtualHost);

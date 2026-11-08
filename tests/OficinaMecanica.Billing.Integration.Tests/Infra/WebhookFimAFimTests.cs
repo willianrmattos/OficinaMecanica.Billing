@@ -178,6 +178,32 @@ public class WebhookFimAFimTests
     }
 
     [Fact]
+    public async Task AprovarDepoisDeReiniciarAApi_NaoDeveColidirComTentativaJaGravadaNoBanco()
+    {
+        await using var ambiente = await AmbienteInfra.CriarComApiAsync(_infra);
+        using var clienteAntes = ambiente.CriarClienteHttp();
+        var (primeiraOrdem, _, primeiroSolicitado, primeiraPreferencia) = await PedirPagamentoAsync(ambiente);
+        var primeiraResposta = await clienteAntes.PostAsync($"/dev/pagamentos/{primeiraPreferencia}/aprovar", null);
+        primeiraResposta.StatusCode.Should().Be(HttpStatusCode.OK);
+        var idAntes = (await primeiraResposta.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("gatewayPaymentId").GetString();
+        await ambiente.AguardarAsync(() => ambiente.Coletor.De<PagamentoAprovado>(primeiraOrdem).Count == 1, "o primeiro pagamento foi aprovado");
+
+        await ambiente.ReiniciarApiAsync();
+        using var clienteDepois = ambiente.CriarClienteHttp();
+        var (segundaOrdem, _, segundoSolicitado, segundaPreferencia) = await PedirPagamentoAsync(ambiente);
+        var segundaResposta = await clienteDepois.PostAsync($"/dev/pagamentos/{segundaPreferencia}/aprovar", null);
+
+        segundaResposta.StatusCode.Should().Be(HttpStatusCode.OK, "o gateway Fake reiniciado não pode repetir o id de uma tentativa já gravada");
+        var idDepois = (await segundaResposta.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("gatewayPaymentId").GetString();
+        idDepois.Should().NotBe(idAntes);
+        await ambiente.AguardarAsync(() => ambiente.Coletor.De<PagamentoAprovado>(segundaOrdem).Count == 1, "o segundo pagamento foi aprovado");
+        var gravados = await ambiente.ComBancoAsync(db => db.TentativasPagamento.Select(t => t.GatewayPaymentId).ToListAsync());
+        gravados.Should().BeEquivalentTo(new[] { idAntes, idDepois });
+        primeiroSolicitado.PagamentoId.Should().NotBe(segundoSolicitado.PagamentoId);
+        (await ambiente.MensagensComErroAsync()).Should().Be(0);
+    }
+
+    [Fact]
     public async Task AplicacaoSobeComMigrationAutomaticaEmDevelopmentEResponde200NoHealth()
     {
         await using var ambiente = await AmbienteInfra.CriarComApiAsync(_infra);
