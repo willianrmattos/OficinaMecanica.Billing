@@ -1,0 +1,638 @@
+{
+  "openapi": "3.0.1",
+  "info": {
+    "title": "OficinaMecanica Billing API",
+    "description": "Orçamento e pagamento (Mercado Pago Checkout Pro) da oficina mecânica. Participa da saga orquestrada pelo OS Service por mensagens (RabbitMQ); esta API expõe a consulta, o webhook do Mercado Pago e a ação de staff sobre estornos.",
+    "version": "v1"
+  },
+  "paths": {
+    "/api/orcamentos/ordem-de-servico/{ordemDeServicoId}": {
+      "get": {
+        "tags": [
+          "Orcamentos"
+        ],
+        "summary": "Obtém o orçamento de uma ordem de serviço.",
+        "operationId": "Orcamentos_ObterPorOrdemDeServico",
+        "parameters": [
+          {
+            "name": "ordemDeServicoId",
+            "in": "path",
+            "description": "Identificador da ordem de serviço (existe no máximo um orçamento por ordem).",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Orçamento encontrado, com os itens em snapshot.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrcamentoDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "A ordem de serviço ainda não tem orçamento.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/orcamentos": {
+      "get": {
+        "tags": [
+          "Orcamentos"
+        ],
+        "summary": "Lista os orçamentos de forma paginada, do mais recente para o mais antigo.",
+        "operationId": "Orcamentos_Listar",
+        "parameters": [
+          {
+            "name": "pagina",
+            "in": "query",
+            "description": "Número da página, a partir de 1.",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 1
+            }
+          },
+          {
+            "name": "tamanhoPagina",
+            "in": "query",
+            "description": "Quantidade de itens por página.",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 10
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "description": "Filtro opcional por status do orçamento.",
+            "schema": {
+              "$ref": "#/components/schemas/StatusOrcamento"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Página de orçamentos.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrcamentoDtoPaginacaoResultDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Parâmetros de paginação inválidos.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/pagamentos/ordem-de-servico/{ordemDeServicoId}": {
+      "get": {
+        "tags": [
+          "Pagamentos"
+        ],
+        "summary": "Obtém o pagamento de uma ordem de serviço, com as tentativas registradas no gateway e o estorno.",
+        "operationId": "Pagamentos_ObterPorOrdemDeServico",
+        "parameters": [
+          {
+            "name": "ordemDeServicoId",
+            "in": "path",
+            "description": "Identificador da ordem de serviço (existe no máximo um pagamento por ordem).",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Pagamento encontrado.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PagamentoDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "A ordem de serviço ainda não tem pagamento.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/pagamentos/{id}/estornar": {
+      "post": {
+        "tags": [
+          "Pagamentos"
+        ],
+        "summary": "Refaz o estorno de um pagamento cujo estorno falhou.",
+        "description": "Só vale para pagamento em `EstornoFalhou`. O estorno usa a mesma chave de idempotência das tentativas\nanteriores, então não há risco de devolver o valor duas vezes, e a saga é avisada do resultado.",
+        "operationId": "Pagamentos_Estornar",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Identificador do pagamento.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "Motivo opcional do reprocessamento.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RefazerEstornoRequest"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RefazerEstornoRequest"
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "$ref": "#/components/schemas/RefazerEstornoRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Estorno reprocessado; o corpo traz o estado atual do pagamento (`Estornado` ou `EstornoFalhou`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PagamentoDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "O pagamento não está com estorno falho.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Pagamento não encontrado.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/webhooks/mercadopago": {
+      "post": {
+        "tags": [
+          "Webhooks"
+        ],
+        "summary": "Recebe a notificação de um pagamento do Mercado Pago.",
+        "description": "Rota anônima: quem autentica a chamada é a assinatura `x-signature` (HMAC-SHA256 do manifest\n`id:<data.id>;request-id:<x-request-id>;ts:<ts>;` com o segredo do webhook). O corpo nunca é\nconfiável: o estado real do pagamento é sempre consultado no gateway antes de qualquer ação. Notificações de\noutros tópicos (diferentes de `payment`) são confirmadas e ignoradas.",
+        "operationId": "Webhooks_ReceberMercadoPago",
+        "parameters": [
+          {
+            "name": "data.id",
+            "in": "query",
+            "description": "Parâmetro `data.id` da URL, o valor que o Mercado Pago assina; na ausência vale o do corpo.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "type",
+            "in": "query",
+            "description": "Parâmetro `type` da URL, usado quando o corpo não traz o tópico.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "x-signature",
+            "in": "header",
+            "description": "Cabeçalho `x-signature` no formato `ts=...,v1=...`.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "x-request-id",
+            "in": "header",
+            "description": "Cabeçalho `x-request-id`, único por entrega.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "Corpo da notificação (`type`, `action` e `data.id`).",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NotificacaoMercadoPagoRequest"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NotificacaoMercadoPagoRequest"
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "$ref": "#/components/schemas/NotificacaoMercadoPagoRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Notificação processada, repetida ou de um tópico ignorado."
+          },
+          "400": {
+            "description": "Identificador do pagamento ou do pedido ausente.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Assinatura ausente, inválida ou fora da tolerância de tempo.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "O gateway ainda não enxerga o pagamento notificado; o Mercado Pago deve reentregar."
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "DadosDaNotificacaoMercadoPago": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Identificador do pagamento no Mercado Pago.",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false,
+        "description": "Identificador do recurso notificado."
+      },
+      "EstornoDto": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "nullable": true
+          },
+          "gatewayRefundId": {
+            "type": "string",
+            "nullable": true
+          },
+          "tentativas": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "erro": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "ItemOrcamentoDto": {
+        "type": "object",
+        "properties": {
+          "tipo": {
+            "type": "string",
+            "nullable": true
+          },
+          "nome": {
+            "type": "string",
+            "nullable": true
+          },
+          "precoUnitario": {
+            "type": "number",
+            "format": "double"
+          },
+          "quantidade": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "subtotal": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
+      },
+      "NotificacaoMercadoPagoRequest": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "description": "Tópico da notificação; só `payment` é processado.",
+            "nullable": true
+          },
+          "action": {
+            "type": "string",
+            "description": "Ação que gerou a notificação (por exemplo `payment.updated`).",
+            "nullable": true
+          },
+          "data": {
+            "$ref": "#/components/schemas/DadosDaNotificacaoMercadoPago"
+          }
+        },
+        "additionalProperties": false,
+        "description": "Notificação de webhook enviada pelo Mercado Pago."
+      },
+      "OrcamentoDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "ordemDeServicoId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "numero": {
+            "type": "string",
+            "nullable": true
+          },
+          "status": {
+            "type": "string",
+            "nullable": true
+          },
+          "valorTotal": {
+            "type": "number",
+            "format": "double"
+          },
+          "validoAte": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "criadoEm": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "laudo": {
+            "type": "string",
+            "nullable": true
+          },
+          "motivoCancelamento": {
+            "type": "string",
+            "nullable": true
+          },
+          "itens": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ItemOrcamentoDto"
+            },
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "OrcamentoDtoPaginacaoResultDto": {
+        "type": "object",
+        "properties": {
+          "itens": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OrcamentoDto"
+            },
+            "nullable": true
+          },
+          "total": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "pagina": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "tamanhoPagina": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "totalPaginas": {
+            "type": "integer",
+            "format": "int32"
+          }
+        },
+        "additionalProperties": false
+      },
+      "PagamentoDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "orcamentoId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "ordemDeServicoId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "type": "string",
+            "nullable": true
+          },
+          "valor": {
+            "type": "number",
+            "format": "double"
+          },
+          "linkPagamento": {
+            "type": "string",
+            "nullable": true
+          },
+          "expiraEm": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "criadoEm": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "gatewayPaymentIdAprovado": {
+            "type": "string",
+            "nullable": true
+          },
+          "aprovadoEm": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "aprovacaoTardia": {
+            "type": "boolean"
+          },
+          "motivoCancelamento": {
+            "type": "string",
+            "nullable": true
+          },
+          "tentativas": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TentativaPagamentoDto"
+            },
+            "nullable": true
+          },
+          "estorno": {
+            "$ref": "#/components/schemas/EstornoDto"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ProblemDetails": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "nullable": true
+          },
+          "title": {
+            "type": "string",
+            "nullable": true
+          },
+          "status": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "detail": {
+            "type": "string",
+            "nullable": true
+          },
+          "instance": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": { }
+      },
+      "RefazerEstornoRequest": {
+        "type": "object",
+        "properties": {
+          "motivo": {
+            "type": "string",
+            "description": "Motivo informado pelo staff (até 500 caracteres).",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false,
+        "description": "Corpo opcional do reprocessamento manual de um estorno."
+      },
+      "StatusOrcamento": {
+        "enum": [
+          1,
+          2,
+          3,
+          4,
+          5
+        ],
+        "type": "integer",
+        "format": "int32"
+      },
+      "TentativaPagamentoDto": {
+        "type": "object",
+        "properties": {
+          "gatewayPaymentId": {
+            "type": "string",
+            "nullable": true
+          },
+          "statusGateway": {
+            "type": "string",
+            "nullable": true
+          },
+          "statusDetalhe": {
+            "type": "string",
+            "nullable": true
+          },
+          "valorGateway": {
+            "type": "number",
+            "format": "double"
+          },
+          "atualizadoEm": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "securitySchemes": {
+      "Bearer": {
+        "type": "http",
+        "description": "JWT emitido pelo OficinaMecanica.Seguranca. Informe somente o token.",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    }
+  },
+  "security": [
+    {
+      "Bearer": [ ]
+    }
+  ]
+}

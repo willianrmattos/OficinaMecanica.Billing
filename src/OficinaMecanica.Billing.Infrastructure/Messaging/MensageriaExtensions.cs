@@ -2,10 +2,12 @@ using FluentValidation;
 using MassTransit;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Options;
 using OficinaMecanica.Billing.Application.Exceptions;
 using OficinaMecanica.Billing.Domain.Exceptions;
 using OficinaMecanica.Billing.Infrastructure.Data;
+using OficinaMecanica.Billing.Infrastructure.Health;
 using OficinaMecanica.Billing.Infrastructure.Messaging.Consumers;
 using OficinaMecanica.Billing.Infrastructure.Options;
 using OficinaMecanica.Contracts;
@@ -47,6 +49,21 @@ public static class MensageriaExtensions
             default:
                 throw ValorIndefinido("Persistencia", opcoes.Persistencia, "EntityFramework ou Nenhuma");
         }
+
+        if (opcoes.Transporte == TransporteDaMensageria.RabbitMq)
+        {
+            // Broker fora é Degraded (HTTP 200 em /health/ready): com o outbox a API continua aceitando escrita.
+            services.AddHealthChecks().AddCheckComCache<RabbitMqHealthCheck>(
+                "rabbitmq", failureStatus: HealthStatus.Degraded, tags: new[] { "ready" });
+        }
+
+        // O check do bus que o MassTransit registra também não pode tirar o pod de rotação por causa do broker, mesmo que
+        // um dia ele passe a reportar a falta de conexão: rebaixo a falha dele para Degraded.
+        services.PostConfigure<HealthCheckServiceOptions>(health =>
+        {
+            foreach (var registro in health.Registrations.Where(r => r.Name == "masstransit-bus"))
+                registro.FailureStatus = HealthStatus.Degraded;
+        });
 
         services.AddMassTransit(x =>
         {

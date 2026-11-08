@@ -10,6 +10,7 @@ using OficinaMecanica.Billing.Infrastructure.BackgroundServices;
 using OficinaMecanica.Billing.Infrastructure.Data;
 using OficinaMecanica.Billing.Infrastructure.Gateways;
 using OficinaMecanica.Billing.Infrastructure.Gateways.MercadoPago;
+using OficinaMecanica.Billing.Infrastructure.Health;
 using OficinaMecanica.Billing.Infrastructure.Messaging;
 using OficinaMecanica.Billing.Infrastructure.Observability;
 using OficinaMecanica.Billing.Infrastructure.Options;
@@ -41,6 +42,11 @@ public static class DependencyInjection
                 }));
 
         services.AddScoped<IUnitOfWork>(provedor => provedor.GetRequiredService<BillingDbContext>());
+
+        // Prontidão: sem o banco a API não aceita escrita, então só ele tira o pod de rotação (ver RabbitMqHealthCheck). O
+        // resultado fica em cache por alguns segundos porque /health/ready é anônimo (ver OpcoesDaProntidao).
+        services.AddOptions<OpcoesDaProntidao>().Bind(configuration.GetSection(OpcoesDaProntidao.Secao));
+        services.AddHealthChecks().AddCheckComCache<SqlServerHealthCheck>("sqlserver", failureStatus: null, tags: new[] { "ready" });
 
         services.AddScoped<IOrcamentoRepository, OrcamentoRepository>();
         services.AddScoped<IPagamentoRepository, PagamentoRepository>();

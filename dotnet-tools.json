@@ -10,11 +10,18 @@
       "rollForward": false
     },
     "dotnet-reportgenerator-globaltool": {
-      "version": "5.4.4",
+      "version": "5.5.12",
       "commands": [
         "reportgenerator"
       ],
       "rollForward": false
+    },
+    "swashbuckle.aspnetcore.cli": {
+      "version": "6.5.0",
+      "commands": [
+        "swagger"
+      ],
+      "rollForward": true
     }
   }
 }

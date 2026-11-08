@@ -7,6 +7,10 @@
 **/TestResults/
 **/coverage/
 .claude/
+.github/
+k8s/
+scripts/
+artifacts/
 .config/
 docs/
 *.md

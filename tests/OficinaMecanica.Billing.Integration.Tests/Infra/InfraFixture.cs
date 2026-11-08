@@ -67,6 +67,31 @@ public sealed class InfraFixture : IAsyncLifetime
         await comando.ExecuteNonQueryAsync();
     }
 
+    // Para o broker sem destruir o container (a porta mapeada e os virtual hosts dos outros testes continuam valendo): a
+    // aplicacao Erlang do RabbitMQ para e a porta AMQP recusa conexao, como num broker fora do ar.
+    public async Task PararBrokerAsync() => await ExecutarNoBrokerAsync("stop_app");
+
+    public async Task IniciarBrokerAsync() => await ExecutarNoBrokerAsync("start_app");
+
+    private async Task ExecutarNoBrokerAsync(string comando)
+    {
+        var resultado = await _rabbit.ExecAsync(new[] { "rabbitmqctl", comando });
+        if (resultado.ExitCode != 0)
+            throw new InvalidOperationException($"rabbitmqctl {comando} falhou: {resultado.Stderr}");
+    }
+
+    // OFFLINE derruba as conexoes abertas e recusa novas, como um banco fora do ar, sem parar o SQL Server dos outros testes.
+    public async Task DefinirBancoOfflineAsync(string banco, bool offline)
+    {
+        await using var conexao = new SqlConnection(ConexaoSql("master"));
+        await conexao.OpenAsync();
+        await using var comando = conexao.CreateCommand();
+        comando.CommandText = offline
+            ? $"ALTER DATABASE [{banco}] SET OFFLINE WITH ROLLBACK IMMEDIATE"
+            : $"ALTER DATABASE [{banco}] SET ONLINE";
+        await comando.ExecuteNonQueryAsync();
+    }
+
     public async Task CriarVirtualHostAsync(string virtualHost)
     {
         var criacao = await _rabbit.ExecAsync(new[] { "rabbitmqctl", "add_vhost", virtualHost });

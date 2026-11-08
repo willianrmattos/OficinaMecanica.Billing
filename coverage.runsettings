@@ -8,7 +8,11 @@
         <Configuration>
           <Format>opencover</Format>
           <Include>[OficinaMecanica.Billing.Domain]*,[OficinaMecanica.Billing.Application]*,[OficinaMecanica.Billing.Infrastructure]*,[OficinaMecanica.Billing.API]*,[OficinaMecanica.Contracts]*</Include>
-          <ExcludeByAttribute>GeneratedCodeAttribute,CompilerGeneratedAttribute,ExcludeFromCodeCoverageAttribute</ExcludeByAttribute>
+          <!-- CompilerGeneratedAttribute NAO esta na lista de proposito: ele tiraria da medida iteradores, lambdas e maquinas de
+               estado async, que sao codigo escrito por nos, e inflaria o numero. -->
+          <!-- ExcludeFromCodeCoverageAttribute e honrado: o codigo marcado some, em silencio, de TODAS as medicoes (bruta e com
+               exclusoes) e do gate. Usar so com justificativa em ADR; o scripts/cobertura.sh lista as ocorrencias no relatorio. -->
+          <ExcludeByAttribute>GeneratedCodeAttribute,ExcludeFromCodeCoverageAttribute</ExcludeByAttribute>
           <IncludeTestAssembly>false</IncludeTestAssembly>
           <SingleHit>false</SingleHit>
           <SkipAutoProps>false</SkipAutoProps>

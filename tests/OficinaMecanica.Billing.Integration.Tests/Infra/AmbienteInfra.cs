@@ -121,6 +121,8 @@ public sealed class AmbienteInfra : IAsyncDisposable
         ["JwtSettings:Audience"] = EmissorDeTokens.Audiencia,
         ["JwtSettings:JwksUri"] = "http://127.0.0.1:1/.well-known/jwks.json",
         ["Billing:ReconciliadorHabilitado"] = "false",
+        // Sem cache de prontidão: estes testes derrubam e restauram as dependências e esperam ver cada mudança na hora.
+        ["Health:ProntidaoCacheSegundos"] = "0",
     };
 
     // ---- Comandos da saga ----

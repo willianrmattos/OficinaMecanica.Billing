@@ -1,8 +1,10 @@
 using System.Reflection;
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.OpenApi.Models;
 using OficinaMecanica.Billing.API.Controllers;
+using OficinaMecanica.Billing.API.Health;
 using OficinaMecanica.Billing.API.Middleware;
 using OficinaMecanica.Billing.Application;
 using OficinaMecanica.Billing.Infrastructure;
@@ -180,7 +182,16 @@ app.UseAuthorization();
 
 app.MapControllers();
 app.MapMetrics();
-app.MapHealthChecks("/health");
+// /health só confirma que o processo está de pé (probe de liveness: uma queda de dependência não pode fazer o Kubernetes
+// reiniciar o pod). /health/ready (tag "ready") cobre as dependências: o SQL Server, sem o qual a API não aceita escrita,
+// devolve 503 quando cai; o RabbitMQ (conexão AMQP de verdade) devolve Degraded, que continua 200 porque o outbox segura as
+// mensagens até o broker voltar. O alerta do broker fica por métrica.
+app.MapHealthChecks("/health", new HealthCheckOptions { Predicate = check => !check.Tags.Contains("ready") });
+app.MapHealthChecks("/health/ready", new HealthCheckOptions
+{
+    Predicate = check => check.Tags.Contains("ready"),
+    ResponseWriter = ProntidaoResponseWriter.EscreverAsync
+});
 
 // Só depois de o host realmente subir: um ValidateOnStart que derruba a partida não pode ter deixado antes uma
 // mensagem de sucesso no log.
