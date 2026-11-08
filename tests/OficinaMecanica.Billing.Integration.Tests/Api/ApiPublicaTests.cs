@@ -73,6 +73,30 @@ public class ApiPublicaTests : IClassFixture<BillingApiFactory>
         (await resposta.Content.ReadAsStringAsync()).Should().Contain("http_requests_received_total");
     }
 
+    // O prometheus-net rotula cada requisição com o status final; como os testes rodam em série, a diferença entre duas
+    // leituras de /metrics isola a chamada feita entre elas, mesmo com o registro de métricas compartilhado pelo processo.
+    private async Task<double> RequisicoesDaSimulacaoPorCodigoAsync(string codigo)
+    {
+        var texto = await (await _cliente.GetAsync("/metrics")).Content.ReadAsStringAsync();
+        return texto.Split('\n')
+            .Where(l => l.StartsWith("http_requests_received_total{", StringComparison.Ordinal)
+                        && l.Contains($"code=\"{codigo}\"") && l.Contains("controller=\"DevPagamentos\"") && l.Contains("action=\"Aprovar\""))
+            .Sum(l => double.Parse(l[(l.LastIndexOf(' ') + 1)..], System.Globalization.CultureInfo.InvariantCulture));
+    }
+
+    [Fact]
+    public async Task Metrics_ErroMapeadoPeloMiddleware_DeveSerContadoComOCodigoRealENaoComoSucesso()
+    {
+        var antesComo404 = await RequisicoesDaSimulacaoPorCodigoAsync("404");
+        var antesComo200 = await RequisicoesDaSimulacaoPorCodigoAsync("200");
+
+        var resposta = await _cliente.PostAsync("/dev/pagamentos/fake-pref-inexistente/aprovar", null);
+
+        resposta.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        (await RequisicoesDaSimulacaoPorCodigoAsync("404")).Should().Be(antesComo404 + 1, "o erro mapeado para 404 aparece como 404 em /metrics");
+        (await RequisicoesDaSimulacaoPorCodigoAsync("200")).Should().Be(antesComo200, "a chamada que falhou não conta como 200");
+    }
+
     // ---- Swagger ----
 
     [Fact]

@@ -143,8 +143,10 @@ app.Use((context, next) =>
     return next();
 });
 
-app.UseMiddleware<ExceptionHandlingMiddleware>();
+// UseHttpMetrics fica por fora do middleware de exceções: ele lê o status quando a resposta já foi montada, então o
+// 404/409/500 e o 499 mapeados ali aparecem nas métricas com o código real (por dentro, tudo contaria como 200).
 app.UseHttpMetrics();
+app.UseMiddleware<ExceptionHandlingMiddleware>();
 
 // Migration automática só em Development: em produção o CI aplica as migrations (como no monolito), e uma
 // réplica nunca deve alterar o esquema por conta própria.
