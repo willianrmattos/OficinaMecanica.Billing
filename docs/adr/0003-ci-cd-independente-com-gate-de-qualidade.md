@@ -168,12 +168,13 @@ dependencia nao pode reiniciar o pod) e `/health/ready` roda os checks da tag `r
   condicoes `if` so se provam na primeira execucao real.
 - **Broker fora nao tira o pod de rotacao**: com o RabbitMQ parado o `/health/ready` segue 200 e so o corpo mostra `rabbitmq`
   `Degraded`; quem monitora so sabe pelo corpo. O alerta (e um gauge de mensagens pendentes no outbox) ainda nao existe como
-  metrica: fica para a F9. Em contrapartida, banco fora derruba a prontidao (503) e o pod sai de rotacao ate o banco voltar; com o
+  metrica: fica pendente. Em contrapartida, banco fora derruba a prontidao (503) e o pod sai de rotacao ate o banco voltar; com o
   Azure SQL serverless acordando, a probe pode ficar em 503 por alguns ciclos.
 - **`/health/ready` anonimo exposto pela APIM**: a rota repassa qualquer path, entao qualquer cliente da internet pode chamar
   `/billingserver/health/ready`. O cache de 5 s limita o custo a uma conexao SQL e uma AMQP a cada 5 s e o corpo nao vaza
-  excecao, mas o endpoint continua publico. Mitigacao pendente da F9, no `OficinaMecanica.Infra`: policy da APIM que bloqueia
-  `/health/ready` e `/metrics` na rota publica (a probe do kubelet bate direto no pod e nunca passa pela APIM).
+  excecao, mas o endpoint continua publico. Mitigacao no `OficinaMecanica.Infra` (ADR 0007 de la): a policy da APIM que devolve 404
+  para `/health/ready` e `/metrics` na rota publica existe e fica ativa quando o Terraform do Infra for aplicado (ainda nao foi);
+  a probe do kubelet bate direto no pod e nunca passa pela APIM.
 
 ## Alternativas consideradas
 - **Pipeline unico para todos os servicos**: acopla os repositorios e contraria o requisito de CI/CD independente.

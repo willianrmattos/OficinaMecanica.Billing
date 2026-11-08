@@ -12,14 +12,14 @@ a autoridade sobre o pagamento: cancelar um pagamento ja aprovado responde `Paga
 Repositorio irmao de `OficinaMecanica`, `OficinaMecanica.Execucao`, `OficinaMecanica.Seguranca`,
 `OficinaMecanica.Infra` e `OficinaMecanica.Banco`. Sem dependencia de compilacao com nenhum deles.
 
-## Estado atual (ondas 2 e F7)
+## Estado atual
 
 Existem **Domain**, **Application**, **Infrastructure** (EF Core 9 + outbox/inbox do MassTransit 8.5.12, consumers,
 gateways Mercado Pago/Fake, validador de assinatura, metricas, reconciliador, JWT/JWKS), **API** (webhook, consultas,
 Swagger, `/health`, `/metrics`), `Dockerfile`, `docker-compose.yml`, ADRs, os testes (unitarios, pipeline HTTP e
-infraestrutura com Testcontainers) e, da **F7**, o CI/CD (`.github/`), os manifests (`k8s/billing/`), a protecao de branch
-versionada e os scripts de `scripts/`. Falta o README final (F9). Os contratos sao a copia da onda 1.
-O repositorio ainda nao existe no GitHub: a F7 foi validada so localmente (`actionlint`, `kubeconform`, `docker build`,
+infraestrutura com Testcontainers) e o CI/CD (`.github/`), os manifests (`k8s/billing/`), a protecao de branch
+versionada e os scripts de `scripts/`. O `README.md` e o `docs/cobertura.md` estao prontos. Os contratos sao a copia dos contratos do OS Service.
+O repositorio ainda nao existe no GitHub: o CI/CD foi validado so localmente (`actionlint`, `kubeconform`, `docker build`,
 execucao dos scripts e do `ci-local.sh`); a primeira execucao real do workflow acontece na publicacao.
 
 ## Estrutura do Projeto
@@ -125,7 +125,7 @@ command/DTO do gateway ficam em `Application.Tests/Builders` (nao em `Tests.Comm
 - `ValidationBehavior` usa `where TRequest : notnull` (nao `IRequest<TResponse>`) para tambem valer
   nos commands sem retorno (`IRequest`) e cria um `ValidationContext` por validador.
 
-## Infrastructure e API (decisoes da onda 2)
+## Infrastructure e API (decisoes de implementacao)
 
 - **Persistencia**: `BillingDbContext : DbContext, IUnitOfWork`, EF Core 9.0.22, dinheiro `decimal(18,2)`, `Version` como
   token de concorrencia (incrementado no `SaveChangesAsync` para agregados `Modified`, como no monolito), `ValueGeneratedNever`
@@ -133,7 +133,7 @@ command/DTO do gateway ficam em `Application.Tests/Builders` (nao em `Tests.Comm
   `TentativaPagamento.GatewayPaymentId`, `WebhookRecebido.RequestId`, `CancelamentoPrevio(OrdemDeServicoId, Tipo)` e
   `Estorno.PagamentoId`. Migration `Inicial` em `Infrastructure/Data/Migrations` (inclui inbox/outbox/outbox-state e
   `Estornos.AbandonadoEm`).
-  Domain events nao existem aqui (a onda 1 decidiu nao levanta-los): nao ha interceptor de dominio.
+  Domain events nao existem aqui (o dominio decidiu nao levanta-los): nao ha interceptor de dominio.
 - **Mensageria** (`AddMensageria`): ver ADR 0002. `MassTransitHostOptions.WaitUntilStarted = true`; bus outbox +
   consumer outbox, `IsolationLevel` NUNCA definido (nunca `Serializable`); filtros `UseMessageRetry` -> outbox ->
   consumers no endpoint `Filas.Billing`; `EnableRetryOnFailure` do EF so quando `IScopedConsumeContextProvider.HasContext`
@@ -143,7 +143,7 @@ command/DTO do gateway ficam em `Application.Tests/Builders` (nao em `Tests.Comm
   `AddMensageria`, que e fail-closed (`switch` que lanca no valor desconhecido; nunca cai em "memoria" por exclusao).
   **`EmMemoria` e `Nenhuma` so sao aceitos em `Development` e `Testing`**: `ValidadorDasOpcoesDaMensageria` (`ValidateOnStart`) derruba a
   partida em qualquer outro ambiente, com mensagem em portugues, porque sem RabbitMQ e sem outbox a API sobe "saudavel" mas perde
-  mensagem em silencio. **O k8s (F7) NAO pode usar `ASPNETCORE_ENVIRONMENT=Development` nem as chaves em memoria**: usar `Production`
+  mensagem em silencio. **O k8s NAO pode usar `ASPNETCORE_ENVIRONMENT=Development` nem as chaves em memoria**: usar `Production`
   (ou `Staging`) com `Mensageria__Transporte=RabbitMq` e `Mensageria__Persistencia=EntityFramework` (os padroes). `Testing` existe
   so para os testes do proprio repo.
 - **Exclusividade por ordem de servico**: todo consumer pede `sp_getapplock` (dono `Transaction`, espera maxima de 20 s, menor que o
@@ -151,7 +151,8 @@ command/DTO do gateway ficam em `Application.Tests/Builders` (nao em `Tests.Comm
   (`IBloqueioPorOrdemDeServico`). Sem ele, Gerar e Cancelar da mesma ordem processados juntos nao se enxergam (tombstone e
   orcamento coexistem e o cancelamento se perde); `SemBloqueioPorOrdemDeServico` quando `Persistencia=Nenhuma`.
 - **Gateways**: `Pagamento:Provider` = `MercadoPago` (padrao) | `Fake`. O Fake so em `Development` (valida na partida).
-  `FakePagamentoGateway` e singleton, em memoria, com estado manipulavel (aprovar/recusar preferencia, falha de estorno).
+  `FakePagamentoGateway` e singleton, em memoria, com estado manipulavel (aprovar/recusar preferencia, falha de estorno). Os ids de pagamento
+  partem do relogio (`TimeProvider`, ms x 1000 + contador, faixa reservada por instancia): o banco sobrevive ao restart e `GatewayPaymentId` e unico.
   `MercadoPagoGateway` usa o SDK `mercadopago-sdk` 3.7.1 com `HttpClient` injetado (`MercadoPago:TimeoutSegundos`, 10),
   token por requisicao, retry do SDK desligado, 4xx definitivo -> `PagamentoRecusadoPeloGatewayException` (401/403/408/409/
   423/425/429 e 5xx NAO: sao falha tecnica), 404 de `GET /v1/payments/{id}` -> `null`, `Valor` com 2 casas.
@@ -186,31 +187,44 @@ command/DTO do gateway ficam em `Application.Tests/Builders` (nao em `Tests.Comm
   `rabbitmq` por `Health__ProntidaoCacheSegundos` (padrao **5 s**; 0 desliga, e os testes de infraestrutura usam 0 para ver cada queda na hora):
   as requisicoes simultaneas esperam uma unica avaliacao e excecao/cancelamento nunca e guardado. O custo fica limitado a 1 conexao SQL + 1 AMQP a cada
   5 s, qualquer que seja a taxa de requisicoes; o cache e menor que o `periodSeconds` da readiness (30 s), entao cada probe ve uma medicao nova. O corpo
-  so traz nome, status e descricao fixa dos checks. **Mitigacao pendente (F9/Infra)**: policy da APIM bloqueando `/health/ready` (e `/metrics`) vindos de
-  fora, ja que a probe do Kubernetes bate direto no pod e nunca passa pela APIM; a APIM so repassa hoje.
+  so traz nome, status e descricao fixa dos checks. **Mitigacao no Infra (policy escrita, ainda nao aplicada)**: a policy da APIM que devolve 404 para
+  `/health/ready` e `/metrics` vindos de fora existe no `OficinaMecanica.Infra` (`apim/bloqueio-health-ready-e-metrics.xml`, ADR 0007 de
+  la) e fica ativa quando o Terraform do Infra for aplicado (ainda nao foi: ate la a APIM so repassa); a probe do Kubernetes bate direto
+  no pod e nunca passa pela APIM.
   **Auto-pause do Azure SQL serverless**: a readiness NAO e o que o impede. O outbox do MassTransit consulta o banco a cada `Mensageria__OutboxQueryDelayMs`
   (1000 ms) com o pod de pe; o `periodSeconds: 30` so reduz a carga das probes.
   O alerta operacional do broker (e do tamanho do outbox) ainda nao existe como metrica: nao ha gauge de mensagens pendentes no outbox; fica como
-  pendencia da F9.
+  pendencia.
 - **API**: `/metrics` (prometheus-net, tambem expoe o Meter `OficinaMecanica.Billing`) anonimo; controllers com
   `[Authorize]` (JWT RS256 via JWKS: `JwtSettings:Issuer/Audience/JwksUri`, `RequireHttps` so se o JwksUri for https);
   `WebhooksController` anonimo; `DevPagamentosController` so existe com `Provider=Fake` + `Development` (feature provider
   remove o controller, a rota nem aparece no Swagger). `ExceptionHandlingMiddleware`: Domain/Validation 400, KeyNotFound 404,
   `AssinaturaWebhookInvalidaException` 401, `PagamentoDoGatewayIndisponivelException` 503 + `Retry-After`,
-  `DbUpdateConcurrencyException`/violacao de indice unico 409, demais 500 sem detalhe. Migration automatica so em Development.
+  `DbUpdateConcurrencyException`/violacao de indice unico 409, cliente que fechou a conexao antes da resposta 499 sem corpo
+  (so com `RequestAborted` cancelado e resposta nao iniciada; `CancelamentoDaRequisicao` aceita `OperationCanceledException`, inclusive
+  dentro de `DbUpdateException`, e o cancelamento de comando SQL em voo, que o SqlClient devolve como `SqlException` com todos os erros
+  em Number 0/Class 11/State 0, nunca pelo texto; deadlock, timeout, chave duplicada e sessao derrubada seguem como erro; log Information
+  so com o template da rota; `UseHttpMetrics` fica ANTES do middleware no `Program.cs`, entao o `/metrics` mostra 499/4xx/5xx com o codigo
+  real), demais 500 sem detalhe. Com a resposta ja iniciada o middleware nao toca no status nem nos cabecalhos (o Kestrel lanca
+  `InvalidOperationException`): registra o erro e aborta a conexao (`HttpContext.Abort()`; o cliente ve a falha em vez de uma
+  resposta truncada); se foi o proprio cliente que fechou (`RequestAborted` cancelado e `CancelamentoDaRequisicao.Eh`), so Information,
+  sem abortar. O predicado de `SqlException` depende do comportamento do `Microsoft.Data.SqlClient` (hoje 5.1.9, resolvido pelo
+  `Microsoft.EntityFrameworkCore.SqlServer`): os 8 testes `Category=Infra` de `CancelamentoDaRequisicaoSqlTests` o protegem contra
+  upgrade (Dependabot), e o job Build & Test reprova se o SqlClient mudar o formato do erro de cancelamento.
+  Migration automatica so em Development.
 - **Metricas** (`MetricasDoBilling`, Meter `OficinaMecanica.Billing`): `divergencias_de_pagamento_total`,
   `aprovacoes_tardias_total`, `aprovacoes_duplicadas_total`, `orcamentos_gerados_total`, `pagamentos_aprovados_total`,
   `pagamentos_recusados_total` (tentativas), `pagamentos_recusados_pelo_gateway_total` (solicitacao cancelada porque o gateway recusou
   criar a preferencia: pode ser defeito do nosso request, entao tambem vai como `LogError`), `pagamentos_estornados_total`,
   `estornos_abandonados_total`. Todos contam (e os avisos de log de erro saem) so depois do `SaveChanges`; dentro de um consumer esse
   save ainda nao e commit, entao um rollback posterior (retry da mensagem) pode contar de novo. Em producao exportar com
-  `OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE=delta` (k8s, F7).
+  `OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE=delta` (k8s).
   **`/metrics` (prometheus-net)**: o Meter aparece como `oficinamecanica_billing_*` com `# TYPE ... gauge` (o adaptador do
   prometheus-net expoe o contador como gauge) e so depois do primeiro incremento que ele observa: incrementos anteriores ao
   primeiro scrape de `/metrics` nao aparecem, e um contador nunca incrementado nem e listado. Para valores confiaveis use o
   export OTLP (`Otel__Endpoint`); `/metrics` serve para os contadores HTTP e para uma olhada local.
 
-## Requisitos da onda 2: todos atendidos (referencia)
+## Requisitos da implementacao: todos atendidos (referencia)
 
 Reconciliador (inclusive `AprovacaoDuplicada`), retry do MassTransit (nao repete Validation/Domain/AssinaturaInvalida; repete
 indisponibilidade do gateway), publisher com copia do `MessageId` (acessor por tipo compilado uma vez), `HttpClient` com timeout
@@ -219,10 +233,10 @@ curto, adaptador com normalizacao/404/4xx e sem corpo do SDK em mensagem, consum
 
 ## Pendencias e requisitos cruzados
 
-- **F7 (CI/k8s)**: entregue (secao "CI/CD e Kubernetes" abaixo). O Deployment usa `ASPNETCORE_ENVIRONMENT=Production` (nunca
+- **CI/k8s**: entregue (secao "CI/CD e Kubernetes" abaixo). O Deployment usa `ASPNETCORE_ENVIRONMENT=Production` (nunca
   `Development`: habilitaria migration automatica e o gateway Fake), RabbitMq + EntityFramework e
   `OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE=delta`. O que sobra e da publicacao (lista no fim da secao).
-- **F9**: README final, evidencias de cobertura e a metrica/alerta do broker e do outbox (gauge de mensagens pendentes no outbox e alerta de
+- **Pendente**: a metrica/alerta do broker e do outbox (gauge de mensagens pendentes no outbox e alerta de
   `rabbitmq` `Degraded` por mais de N minutos): hoje o Degraded so aparece no corpo de `/health/ready`.
 - **Requisito cruzado (saga do OS Service)**: o estorno automatico por aprovacao tardia faz o Billing emitir
   `PagamentoEstornado`/`EstornoFalhou` com a saga FORA do estado `Estornando` (ela ja esta em `Cancelada` ou
@@ -234,7 +248,7 @@ curto, adaptador com normalizacao/404/4xx e sem corpo do SDK em mensagem, consum
 - A saga deve esperar `OrcamentoGerado`/`PagamentoSolicitado` repetidos com o mesmo `MessageId` (comando reentregue): usar o inbox
   e tratar o evento como idempotente. `PagamentoCancelado.PagamentoId` pode ser `null`.
 
-## CI/CD e Kubernetes (F7)
+## CI/CD e Kubernetes
 
 Decisoes no ADR 0003. Pipeline proprio em `.github/workflows/ci.yml` (nome `CI`; gatilhos push/PR em `main`/`release` e
 `workflow_dispatch`; `concurrency` por ref, `cancel-in-progress` so em PR; `permissions` minimas, `id-token: write` so nos jobs
@@ -313,13 +327,15 @@ tocam o Azure). Os valores reais do Mercado Pago, do RabbitMQ e do banco vivem s
 `exportar-swagger.sh`, os projetos e filtros de `cobertura.sh` e `coverage.runsettings`, `K8S_DIR`/imagem em `validar-k8s.sh`, o repo padrao do
 `aplicar-ruleset.sh`; os nomes, labels e a lista de secrets dos manifests; o MassTransit/EF/Mongo do guardrail e do Dependabot conforme o servico.
 
-**Fica para a publicacao**: criar o repositorio `willianrmattos/OficinaMecanica.Billing` e empurrar; preencher `billing_github_repo_id` no
+**Fica para a publicacao**: criar o repositorio `willianrmattos/OficinaMecanica.Billing` e empurrar as branches (`main` e `release` locais so tem o commit inicial, sem
+workflow, entao nao disparam nada), depois empurrar a branch de funcionalidade e abrir o PR para `release` (o CI roda no PR; imagem e deploy so no merge
+em `release`; o merge de `release` em `main` e do usuario); preencher `billing_github_repo_id` no
 `OficinaMecanica.Infra` (aplicar) e configurar as variaveis OIDC; criar o secret `SONAR_TOKEN` e as variaveis do Sonar (e o projeto no
 SonarCloud); rodar uma vez o CI para os checks existirem e entao `bash scripts/aplicar-ruleset.sh`; **BLOQUEANTE antes do primeiro push
 real: pinar `aquasecurity/trivy-action`, `dorny/test-reporter` e as demais actions de terceiros (`docker/*`, `azure/*`, `SonarSource`...) por SHA completo
 verificado no repositorio de cada action** (hoje estao por tag, que e mutavel, e as tags nao puderam ser conferidas sem tocar o GitHub; o Dependabot de
-`github-actions` mantem os SHAs depois); confirmar a premissa da APIM (concatenacao do path do backend `/billing`) e criar a policy que bloqueia
-`/health/ready` e `/metrics` vindos de fora; `kubectl describe node` com folga de CPU antes do primeiro deploy.
+`github-actions` mantem os SHAs depois); confirmar a premissa da APIM (concatenacao do path do backend `/billing`) e, depois do apply do Infra, que a policy
+(ja existe la) devolve 404 para `/health/ready` e `/metrics` vindos de fora; `kubectl describe node` com folga de CPU antes do primeiro deploy.
 
 ## Contratos
 
@@ -399,9 +415,9 @@ bash scripts/validar-k8s.sh                                        # kubeconform
   vao para o SonarCloud (`sonar.coverage.exclusions`). O gate usa a contagem exata de linhas, sem o arredondamento do resumo.
   **`[ExcludeFromCodeCoverage]` e honrado** (`coverage.runsettings`): o codigo marcado some, em silencio, das DUAS medicoes e do gate. **Uso proibido para
   "esconder" codigo sem justificativa em ADR**; hoje nao ha nenhum em `src/`, e o `cobertura.sh relatorio` lista as ocorrencias no log e no Job Summary.
-  Medicao mais recente: **bruta 98,5%** (3467/3518 linhas; API 90,9% por causa do `Program.cs`, Domain 99,3%, Application 100%,
-  Infrastructure 98,8%, Contracts 100%) e **com exclusoes 99,59%** (1950/1958). Testes: Contracts 41, Domain 190, Application 268,
-  Integration 354 sem Docker + 63 de infraestrutura (916 no total), incluindo os de health/readiness.
+  Medicao mais recente: **bruta 98,57%** (3508/3559 linhas; API 91,88% por causa do `Program.cs`, Domain 99,38%, Application 100%,
+  Infrastructure 98,87%, Contracts 100%) e **com exclusoes 99,60%** (1991/1999). Testes: Contracts 41, Domain 190, Application 268,
+  Integration 412 sem Docker + 72 de infraestrutura (983 no total), incluindo os de health/readiness.
 - O log "API iniciada com sucesso" (`app.Lifetime.ApplicationStarted` em `Program.cs`, fora da cobertura) foi verificado manualmente com o
   compose (aparece depois de `Bus started`) e executando a API em `Production` com configuracao invalida (nao aparece quando a
   validacao de partida a derruba).
