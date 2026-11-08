@@ -401,6 +401,14 @@ casos_do_ci_local() {
   esperar 2 "ci-local: argumento desconhecido (exit 2)" bash "$sb/scripts/ci-local.sh" --nao-existe
 }
 
+# O gate de cobertura do CI vale o que a variavel COBERTURA_MINIMA do env do ci.yml disser: reduzir esse numero (80 para 10) deixaria
+# o gate aprovando quase tudo sem que nenhum outro caso reprovasse. Recebe o caminho do ci.yml (o real ou uma copia com defeito
+# plantado); a linha e comparada inteira, na indentacao do bloco env, e tolera o CR de um checkout com fim de linha do Windows.
+casos_do_gate_no_workflow() {
+  esperar 0 "ci.yml: o gate de cobertura do CI exporta COBERTURA_MINIMA: \"80\" (reduzir o valor tem que reprovar)" \
+    grep -Eq '^  COBERTURA_MINIMA: "80"[[:space:]]*$' "$1"
+}
+
 casos_do_repositorio() {
   local ruleset="$RAIZ/.github/rulesets/protect-main-release.json" workflow="$RAIZ/.github/workflows/ci.yml"
 
@@ -414,6 +422,7 @@ casos_do_repositorio() {
     esperar 0 "ruleset: o contexto '$contexto' e o name de um job do ci.yml" grep -Fq "name: \"$contexto\"" "$workflow"
   done < <(sed -nE 's/^[[:space:]]*"context":[[:space:]]*"([^"]+)".*/\1/p' "$ruleset")
   esperar 0 "workflow: o ci.yml real respeita a separacao de privilegios (id-token x actions de terceiros)" bash "$RAIZ/scripts/verificar-workflow.sh" "$workflow"
+  casos_do_gate_no_workflow "$workflow"
   esperar 0 "ruleset: exige Build & Test" grep -Fq '"context": "Build & Test"' "$ruleset"
   esperar 0 "ruleset: exige Quality"      grep -Fq '"context": "Quality"' "$ruleset"
 
@@ -449,11 +458,38 @@ mutante() {
     return
   fi
 
+  avaliar_mutante "$nome" "$funcao" "$copia/scripts"
+}
+
+# mutante_de_arquivo <nome> <arquivo-relativo-a-raiz> <expressao-sed> <funcao-de-casos>: o mesmo para um arquivo que nao e script (o
+# ci.yml): o defeito vai numa copia e a funcao de casos recebe o caminho dela.
+mutante_de_arquivo() {
+  local nome="$1" arquivo="$2" expressao="$3" funcao="$4" copia
+  MUTANTES=$((MUTANTES + 1))
+  copia="$TMP/mutante-$MUTANTES"
+  mkdir -p "$copia"
+  cp "$RAIZ/$arquivo" "$copia/original"
+  cp "$RAIZ/$arquivo" "$copia/alterado"
+  sed -i.bak "$expressao" "$copia/alterado"
+  rm -f "$copia/alterado.bak"
+
+  if cmp -s "$copia/original" "$copia/alterado"; then
+    echo "  ERRO    mutante '$nome': a expressao nao alterou $arquivo (o teste do mutante esta desatualizado)"
+    SOBREVIVENTES=$((SOBREVIVENTES + 1))
+    return
+  fi
+
+  avaliar_mutante "$nome" "$funcao" "$copia/alterado"
+}
+
+# avaliar_mutante <nome> <funcao-de-casos> <alvo>: roda os casos sobre o alvo com o defeito e exige que algum reprove.
+avaliar_mutante() {
+  local nome="$1" funcao="$2" alvo="$3"
   local casos_antes=$CASOS falhas_antes=$FALHAS
   FALHAS_ANTES_DO_MUTANTE=$FALHAS
   PRIMEIRO_CASO_QUE_REPROVOU=""
   SILENCIOSO=true
-  "$funcao" "$copia/scripts"
+  "$funcao" "$alvo"
   SILENCIOSO=false
   local reprovados=$((FALHAS - falhas_antes))
   # Os casos do mutante nao contam como falha do repositorio: so o fato de o mutante ter sido detectado importa.
@@ -509,6 +545,9 @@ if [ "$COM_MUTANTES" = true ]; then
   mutante "cobertura.sh: minimo padrao 80 -> 0"             cobertura.sh 's/COBERTURA_MINIMA:-80/COBERTURA_MINIMA:-0/' casos_do_cobertura
   mutante "cobertura.sh: fase desconhecida sai 0"           cobertura.sh '/Fase desconhecida/,/exit 2/ s/exit 2/exit 0/' casos_do_cobertura
   mutante "cobertura.sh: relatorio sem OpenCover aprova"    cobertura.sh '/nenhum coverage.opencover.xml/,/exit 2/ s/exit 2/exit 0/' casos_do_cobertura
+
+  # ci.yml: o valor do gate de cobertura exportado pelo workflow.
+  mutante_de_arquivo "ci.yml: gate de cobertura do CI reduzido de 80 para 10" .github/workflows/ci.yml 's/COBERTURA_MINIMA: "80"/COBERTURA_MINIMA: "10"/' casos_do_gate_no_workflow
 
   # exportar-swagger.sh, ci-local.sh e validar-k8s.sh.
   mutante "exportar-swagger.sh: --verificar nao falha quando o OpenAPI difere" exportar-swagger.sh '/esta desatualizado em relacao/,/^  exit 1$/ s/^  exit 1$/  exit 0/' casos_do_swagger

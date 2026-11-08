@@ -58,10 +58,11 @@ OpenCover sintetico (79% reprova, 81% aprova, o numero vem "com exclusoes", a va
 invalida e relatorio sem OpenCover saem com 2), o `validar-k8s.sh` roda o kubeconform sobre manifests sinteticos (campo
 desconhecido reprova por causa do `-strict`; o CRD sem schema e ignorado), o `exportar-swagger.sh --verificar` roda com um
 `dotnet` de mentira que grava um documento sintetico (em dia aprova, divergente ou sem `docs/openapi.json` reprova, argumento
-invalido sai com 2), e se confere que `ci.yml` e `ci-local.sh` chamam os mesmos passos. Cada script tem mutantes proprios (a chamada
+invalido sai com 2), e se confere que `ci.yml` e `ci-local.sh` chamam os mesmos passos e que o `ci.yml` exporta `COBERTURA_MINIMA: "80"` (um mutante troca o 80 por 10 numa
+copia do `ci.yml`: reduzir o valor do gate no workflow nao pode passar despercebido). Cada script tem mutantes proprios (a chamada
 do gate apagada, o gate lendo o numero bruto, cada filtro de exclusao removido, `-strict` retirado, falha do kubeconform ignorada...).
 Os casos que dependem do Docker (kubeconform) sao pulados com aviso quando ele nao esta ligado. Na ultima execucao completa
-foram 71 casos e 32 mutantes detectados (o mesmo conjunto de casos do molde da Execucao; os mutantes a mais sao os filtros de
+foram 72 casos e 33 mutantes detectados (o mesmo conjunto de casos do molde da Execucao; os mutantes a mais sao os filtros de
 exclusao de cobertura do Billing, um por padrao: Migrations, `Program.cs`, `DependencyInjection*` e EF Configurations).
 
 **SonarCloud com Quality Gate bloqueante.** O job `quality` baixa o OpenCover do job anterior (artifact), roda
