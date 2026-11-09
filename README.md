@@ -141,13 +141,13 @@ pasta; em um repositorio publicado isoladamente eles nao resolvem.
 
 | Ja executado nesta maquina | Ainda nao executado (depende da publicacao) |
 |----------------------------|---------------------------------------------|
-| Build Release sem avisos e os 983 testes, incluindo os de infraestrutura com SQL Server e RabbitMQ reais em containers ([cobertura](docs/cobertura.md)) | Qualquer execucao do workflow `.github/workflows/ci.yml` no GitHub Actions |
+| Build Release sem avisos e os 983 testes, incluindo os de infraestrutura com SQL Server e RabbitMQ reais em containers ([cobertura](docs/relatorios/cobertura.md)) | Qualquer execucao do workflow `.github/workflows/ci.yml` no GitHub Actions |
 | Stack local com `docker compose` (API, SQL Server, RabbitMQ opcional) e gateway de pagamento Fake | SonarCloud (analise e Quality Gate) |
 | `bash scripts/ci-local.sh`: os mesmos passos do job `Build & Test` | Scan de vulnerabilidades da imagem (Trivy), push no ACR e deploy no AKS |
 | Validacao estatica do workflow (`actionlint`), dos manifests (`kubeconform`) e `docker build` da imagem | Migration aplicada no `BillingDb` real e aplicacao dos manifests em um cluster |
 | Scripts de CI testados com entradas sinteticas e mutantes (`scripts/testar-scripts.sh`) | Identidade OIDC do GitHub Actions, rota `billingserver` na APIM e RabbitMQ no cluster (todos criados pelo repositorio `OficinaMecanica.Infra`, que tambem nao foi aplicado) |
 | Webhook assinado de ponta a ponta com o gateway Fake | Integracao real com o Mercado Pago (so testada com respostas simuladas no formato documentado) |
-| | Ruleset de protecao de branch (`scripts/aplicar-ruleset.sh`) |
+| | Ruleset de protecao de branch (`.github/rulesets/protect-main-release.json`, criado com a GitHub CLI na publicacao) |
 
 ---
 
@@ -268,7 +268,7 @@ pagamento e aprovado depois de cancelado ou expirado, e o reconciliador o reenvi
 enquanto um estorno estiver pendente.
 
 **Eventos publicados** e o que a Saga faz com cada um (conforme o
-[diagrama de estados da Saga](../OficinaMecanica/docs/saga-maquina-de-estados.puml)):
+[diagrama de estados da Saga](../OficinaMecanica/docs/diagramas/saga-maquina-de-estados.puml)):
 
 | Evento | Quando o Billing o publica | Efeito na Saga |
 |--------|----------------------------|----------------|
@@ -534,7 +534,7 @@ sequenceDiagram
 ```
 
 A maquina de estados completa, com todas as compensacoes, esta em
-[`saga-maquina-de-estados.puml`](../OficinaMecanica/docs/saga-maquina-de-estados.puml)
+[`saga-maquina-de-estados.puml`](../OficinaMecanica/docs/diagramas/saga-maquina-de-estados.puml)
 (repositorio do OS Service). Pontos do contrato entre os servicos:
 
 - Um estorno que falha leva a Saga a `EstornoPendenteManual`: ela so cancela a OS
@@ -768,7 +768,7 @@ O relatorio HTML da cobertura sai em `TestResults/report-com-exclusoes/index.htm
   depende so de configuracao externa.
 - **Medicao registrada (2026-11-08)**: **983 testes** passando; cobertura de linhas
   **bruta 98,57%** (3508 de 3559) e **com exclusoes 99,60%** (1991 de 1999). Detalhes,
-  exclusoes e justificativas em [docs/cobertura.md](docs/cobertura.md).
+  exclusoes e justificativas em [docs/relatorios/cobertura.md](docs/relatorios/cobertura.md).
 - **SonarCloud** como quality gate bloqueante no job `Quality` (ainda nao executado:
   depende da publicacao). As exclusoes de cobertura do Sonar sao as mesmas do gate.
 - **Os scripts de decisao tem testes**: `scripts/testar-scripts.sh` exercita o gate, o
@@ -810,9 +810,11 @@ tocam o Azure.
 **Protecao de branch versionada.** O arquivo
 [`.github/rulesets/protect-main-release.json`](.github/rulesets/protect-main-release.json)
 descreve o ruleset do GitHub para `main` e `release`: sem exclusao nem force-push,
-pull request obrigatorio e os checks `Build & Test` e `Quality` exigidos.
-`bash scripts/aplicar-ruleset.sh [owner/repo] [--dry-run]` o cria ou atualiza via
-`gh api` (idempotente). So roda na publicacao e nada o executa automaticamente. O
+pull request obrigatorio e os checks `Build & Test` e `Quality` exigidos. Nao ha
+script para aplica-lo: o JSON e a entrada direta da GitHub CLI
+(`gh api --method POST repos/willianrmattos/OficinaMecanica.Billing/rulesets --input .github/rulesets/protect-main-release.json`),
+executada manualmente na publicacao, depois do primeiro CI (passo 7 da secao
+"11. Publicacao"), e nada a executa automaticamente. O
 Dependabot (`.github/dependabot.yml`) acompanha NuGet, GitHub Actions e Docker
 semanalmente e ignora o major do MassTransit e do EF Core.
 
@@ -1032,11 +1034,14 @@ antes da publicacao.
    (`feature/microsservicos`) e abrir o PR **para `release`**: o CI roda pela primeira vez
    (`Build & Test` e `Quality`; PR nao toca o Azure nem publica imagem). Esses dois checks dependem
    das variaveis e do secret do passo 4.
-7. **Aplicar o ruleset de protecao de branch**, depois que o CI ja rodou ao menos uma vez
+7. **Criar o ruleset de protecao de branch**, depois que o CI ja rodou ao menos uma vez
    (o GitHub so oferece como obrigatorio um check que ja apareceu; com o ruleset ativo, push direto
-   em `main`/`release` passa a ser recusado):
-   `bash scripts/aplicar-ruleset.sh --dry-run` para ver o que sera feito e depois
-   `bash scripts/aplicar-ruleset.sh`.
+   em `main`/`release` passa a ser recusado). O repositorio ainda nao existe no GitHub, entao e
+   uma criacao (POST), com o JSON versionado como entrada da GitHub CLI autenticada com permissao
+   de administracao no repositorio:
+   `gh api --method POST repos/willianrmattos/OficinaMecanica.Billing/rulesets --input .github/rulesets/protect-main-release.json`.
+   O job `Quality` exige o `SONAR_TOKEN` (passo 4): sem ele o check reprova e, exigido pelo
+   ruleset, bloqueia todo PR.
 8. **Merge do PR em `release`.** O push em `release` dispara `Scan Image`, `Build & Push` e
    `Deploy to AKS` **pela primeira vez**: imagem no ACR, migration no `BillingDb` real e rollout no
    Deployment do cluster (homologacao e producao compartilham o mesmo cluster). Antes do merge,

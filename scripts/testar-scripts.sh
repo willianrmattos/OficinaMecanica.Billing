@@ -412,9 +412,6 @@ casos_do_gate_no_workflow() {
 casos_do_repositorio() {
   local ruleset="$RAIZ/.github/rulesets/protect-main-release.json" workflow="$RAIZ/.github/workflows/ci.yml"
 
-  esperar 0 "aplicar-ruleset: --dry-run nao chama o GitHub e sai 0"  bash "$RAIZ/scripts/aplicar-ruleset.sh" --dry-run
-  esperar 2 "aplicar-ruleset: argumento desconhecido (exit 2)"       bash "$RAIZ/scripts/aplicar-ruleset.sh" --nao-existe
-
   # Os contextos exigidos pelo ruleset sao os nomes dos jobs do ci.yml: se divergirem, o check obrigatorio nunca aparece
   # e todo PR fica bloqueado.
   local contexto
@@ -514,7 +511,7 @@ echo "== Casos: exportar-swagger.sh (dotnet de mentira)"
 casos_do_swagger "$RAIZ/scripts"
 echo "== Casos: ci-local.sh"
 casos_do_ci_local "$RAIZ/scripts"
-echo "== Casos: ruleset, aplicar-ruleset e ligacao ci.yml x ci-local.sh"
+echo "== Casos: ruleset (JSON x ci.yml) e ligacao ci.yml x ci-local.sh"
 casos_do_repositorio
 
 if [ "$COM_MUTANTES" = true ]; then

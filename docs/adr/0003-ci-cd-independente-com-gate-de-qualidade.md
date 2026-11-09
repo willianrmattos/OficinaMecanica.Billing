@@ -109,7 +109,10 @@ Azure SQL serverless. A API em `Production` nunca migra sozinha.
 
 **Ruleset versionado e `Quality` obrigatorio.** `.github/rulesets/protect-main-release.json` replica a protecao dos demais
 repositorios (`main` e `release`: sem delete nem force-push, PR obrigatorio) e exige os checks `Build & Test` e `Quality`;
-`scripts/aplicar-ruleset.sh` cria/atualiza o ruleset via `gh api` e so roda na publicacao.
+nao ha script para aplica-lo: o JSON versionado e a entrada direta da GitHub CLI, executada manualmente na publicacao e so depois do
+primeiro CI (o GitHub so oferece como obrigatorio um check que ja apareceu):
+`gh api --method POST repos/willianrmattos/OficinaMecanica.Billing/rulesets --input .github/rulesets/protect-main-release.json`.
+Sem o `SONAR_TOKEN` o job `Quality` reprova e, exigido pelo ruleset, bloqueia todo PR.
 
 **Manifests.** `k8s/billing/` com um unico placeholder, `${IMAGE}`, renderizado por `envsubst` com a imagem do sha antes do
 `kubectl apply` (o Deployment nasce com a tag certa e nenhum apply regride a imagem); segredos so por

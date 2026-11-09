@@ -9,7 +9,7 @@ Registro da cobertura de linhas e da contagem de testes do servico
 |------|-------|
 | Data da medicao | **2026-11-08** (testes entre 19:23 e 19:28, relatorio gerado as 19:28, horario local da maquina de desenvolvimento) |
 | Como foi gerado | `bash scripts/cobertura.sh` (fase `tudo`: testes sem Docker, testes de infraestrutura e relatorio), com Docker ligado |
-| Codigo medido | `src/` e `tests/` deste repositorio. O arquivo mais recente de `src/`, `tests/` e `scripts/` foi modificado as 19:21:53, antes do inicio da medicao (19:23), entao os numeros valem para o codigo desta data; este documento, o `README.md` e o `CLAUDE.md` foram editados depois e nao entram na medicao |
+| Codigo medido | `src/` e `tests/` deste repositorio. O arquivo mais recente de `src/` e `tests/` foi modificado as 19:21:53, antes do inicio da medicao (19:23), entao os numeros valem para o codigo desta data; este documento, o `README.md`, o `CLAUDE.md` e a pasta `scripts/` (remocao do `aplicar-ruleset.sh` e dos casos dele no `testar-scripts.sh`) foram editados depois e nao entram na medicao, que so le `src/` e `tests/` |
 | Resultado dos testes | 983 executados, 983 aprovados, 0 falhas |
 | Gate do CI | cobertura de linhas **>= 80%** sobre o numero "com exclusoes" |
 
@@ -71,7 +71,7 @@ testes:
 | `**/Data/Configurations/**` | Mapeamentos do EF Core (tabelas, tipos, indices) | Declarativos: so tem efeito quando executados contra um banco | Os testes de infraestrutura de esquema, de indices e dos repositorios |
 
 A lista e curta de proposito (ver o
-[ADR 0003](adr/0003-ci-cd-independente-com-gate-de-qualidade.md)), e o numero bruto e
+[ADR 0003](../adr/0003-ci-cd-independente-com-gate-de-qualidade.md)), e o numero bruto e
 publicado ao lado do numero com exclusoes.
 
 ### O que **nao** e excluido, de proposito

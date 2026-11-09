@@ -18,7 +18,7 @@ Existem **Domain**, **Application**, **Infrastructure** (EF Core 9 + outbox/inbo
 gateways Mercado Pago/Fake, validador de assinatura, metricas, reconciliador, JWT/JWKS), **API** (webhook, consultas,
 Swagger, `/health`, `/metrics`), `Dockerfile`, `docker-compose.yml`, ADRs, os testes (unitarios, pipeline HTTP e
 infraestrutura com Testcontainers) e o CI/CD (`.github/`), os manifests (`k8s/billing/`), a protecao de branch
-versionada e os scripts de `scripts/`. O `README.md` e o `docs/cobertura.md` estao prontos. Os contratos sao a copia dos contratos do OS Service.
+versionada e os scripts de `scripts/`. O `README.md` e o `docs/relatorios/cobertura.md` estao prontos. Os contratos sao a copia dos contratos do OS Service.
 O repositorio ainda nao existe no GitHub: o CI/CD foi validado so localmente (`actionlint`, `kubeconform`, `docker build`,
 execucao dos scripts e do `ci-local.sh`); a primeira execucao real do workflow acontece na publicacao.
 
@@ -48,10 +48,11 @@ tests/
   OficinaMecanica.Billing.Tests.Common/    # builders Bogus (OrcamentoBuilder, PagamentoBuilder, ...) e RelogioFixo
 docs/adr/                                  # 0001 (Mercado Pago + gateway abstrato), 0002 (SQL, outbox/inbox), 0003 (CI/CD)
 docs/openapi.json                          # contrato OpenAPI versionado (o CI falha se estiver desatualizado)
+docs/relatorios/cobertura.md               # evidencia da cobertura de testes (numeros medidos com scripts/cobertura.sh)
 .github/                                   # workflows/ci.yml, rulesets/protect-main-release.json, dependabot.yml, PULL_REQUEST_TEMPLATE.md
 k8s/billing/                               # deployment, service, ingress, hpa, secret-provider-class
 scripts/                                   # cobertura.sh, verificar-cobertura.sh, verificar-masstransit.sh, verificar-workflow.sh, testar-scripts.sh,
-                                           # exportar-swagger.sh, validar-k8s.sh, ci-local.sh, aplicar-ruleset.sh
+                                           # exportar-swagger.sh, validar-k8s.sh, ci-local.sh
 Dockerfile  docker-compose.yml  .env.example  coverage.runsettings  dotnet-tools.json
 ```
 
@@ -288,7 +289,6 @@ tocam o Azure). Os valores reais do Mercado Pago, do RabbitMQ e do banco vivem s
 | `verificar-workflow.sh [ci.yml]` | falha (exit 1) se um job que declara `id-token` executa action fora de `actions/*` e `azure/*`, ou se `id-token`/`write-all` esta no nivel do workflow; ignora comentarios do YAML; exit 2 para arquivo ausente/sem jobs |
 | `exportar-swagger.sh [--verificar] [--sem-build]` | `swagger tofile` (ferramenta fixada em `dotnet-tools.json`) para `docs/openapi.json`; com `--verificar` gera em `artifacts/openapi.json` e falha se o versionado difere |
 | `validar-k8s.sh` | renderiza `${IMAGE}` e valida `k8s/billing/` com `kubeconform -strict` (Docker; o CRD do SecretProviderClass e ignorado) |
-| `aplicar-ruleset.sh [owner/repo] [--dry-run]` | cria/atualiza o ruleset via `gh api`; **so roda na publicacao** |
 
 - O `swagger tofile` executa `Program.Main` e INICIA o host: o script sobe a API em `Testing` com transporte em memoria, sem outbox e
   reconciliador desligado, e credenciais de fachada do Mercado Pago (so para passar a validacao de opcoes). O documento e o mesmo de
@@ -296,7 +296,11 @@ tocam o Azure). Os valores reais do Mercado Pago, do RabbitMQ e do banco vivem s
   e `*.sh` em LF).
 - **Protecao de branch**: `.github/rulesets/protect-main-release.json` (alvo `main` e `release`; `deletion`, `non_fast_forward`,
   `pull_request` com 0 aprovacoes e merge/squash/rebase, `required_status_checks` com `Build & Test` e `Quality`). Replica o ruleset dos
-  outros repositorios (aqui sem acesso ao GitHub para comparar: confirmar na publicacao).
+  outros repositorios (aqui sem acesso ao GitHub para comparar: confirmar na publicacao). Nao ha script para aplica-lo: o JSON versionado e
+  a entrada direta da GitHub CLI, executada pelo usuario na publicacao (repositorio ainda inexistente, entao e **criar**, e so depois do
+  primeiro CI, porque o GitHub so oferece como obrigatorio um check que ja apareceu):
+  `gh api --method POST repos/willianrmattos/OficinaMecanica.Billing/rulesets --input .github/rulesets/protect-main-release.json`.
+  O `testar-scripts.sh` confere que os contextos do JSON sao `name` de jobs do `ci.yml`.
 - **Dependabot**: nuget, github-actions e docker, semanal; ignora major de `MassTransit*` (9.x e comercial), de
   `Microsoft.EntityFrameworkCore*` (continua em 9.x por causa do `net8.0`) e das imagens base `dotnet/aspnet`/`dotnet/sdk`.
 
@@ -324,14 +328,16 @@ tocam o Azure). Os valores reais do Mercado Pago, do RabbitMQ e do banco vivem s
 - `kubectl apply --dry-run=client` nao roda sem API server (precisa de discovery); a validacao offline e o `kubeconform -strict`.
 
 **Clonar para outro servico (Execucao, OS Service)**: trocar o bloco `env:` do `ci.yml`; os nomes de projeto/DLL no topo de
-`exportar-swagger.sh`, os projetos e filtros de `cobertura.sh` e `coverage.runsettings`, `K8S_DIR`/imagem em `validar-k8s.sh`, o repo padrao do
-`aplicar-ruleset.sh`; os nomes, labels e a lista de secrets dos manifests; o MassTransit/EF/Mongo do guardrail e do Dependabot conforme o servico.
+`exportar-swagger.sh`, os projetos e filtros de `cobertura.sh` e `coverage.runsettings`, `K8S_DIR`/imagem em `validar-k8s.sh`, o `owner/repo` do
+comando `gh api` do ruleset; os nomes, labels e a lista de secrets dos manifests; o MassTransit/EF/Mongo do guardrail e do Dependabot conforme o servico.
 
 **Fica para a publicacao**: criar o repositorio `willianrmattos/OficinaMecanica.Billing` e empurrar as branches (`main` e `release` locais so tem o commit inicial, sem
 workflow, entao nao disparam nada), depois empurrar a branch de funcionalidade e abrir o PR para `release` (o CI roda no PR; imagem e deploy so no merge
 em `release`; o merge de `release` em `main` e do usuario); preencher `billing_github_repo_id` no
 `OficinaMecanica.Infra` (aplicar) e configurar as variaveis OIDC; criar o secret `SONAR_TOKEN` e as variaveis do Sonar (e o projeto no
-SonarCloud); rodar uma vez o CI para os checks existirem e entao `bash scripts/aplicar-ruleset.sh`; **BLOQUEANTE antes do primeiro push
+SonarCloud); rodar uma vez o CI para os checks existirem e entao criar o ruleset
+(`gh api --method POST repos/willianrmattos/OficinaMecanica.Billing/rulesets --input .github/rulesets/protect-main-release.json`; sem o
+`SONAR_TOKEN` o job `Quality` reprova e, com ele exigido, bloqueia todo PR); **BLOQUEANTE antes do primeiro push
 real: pinar `aquasecurity/trivy-action`, `dorny/test-reporter` e as demais actions de terceiros (`docker/*`, `azure/*`, `SonarSource`...) por SHA completo
 verificado no repositorio de cada action** (hoje estao por tag, que e mutavel, e as tags nao puderam ser conferidas sem tocar o GitHub; o Dependabot de
 `github-actions` mantem os SHAs depois); confirmar a premissa da APIM (concatenacao do path do backend `/billing`) e, depois do apply do Infra, que a policy
