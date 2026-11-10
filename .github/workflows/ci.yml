@@ -255,7 +255,7 @@ jobs:
       # A cobertura vem do job build-and-test (mesmo commit, mesmo caminho de workspace, entao os caminhos de arquivo
       # dentro do OpenCover continuam validos aqui).
       - name: Baixar o OpenCover do build-and-test
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: cobertura-opencover
           path: TestResults
@@ -379,7 +379,7 @@ jobs:
       IMAGE_LATEST: ${{ needs.scan-image.outputs.latest }}
     steps:
       - name: Baixar a imagem escaneada
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: imagem-escaneada
 
