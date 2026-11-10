@@ -398,7 +398,7 @@ bash scripts/validar-k8s.sh                                        # kubeconform
 ## Testes e cobertura
 
 - `Integration.Tests` roda em serie (`DisableTestParallelization`): Meter, variaveis e containers sao compartilhados.
-  Os testes `[Trait("Category","Infra")]` usam Testcontainers com imagens fixadas por digest, `MSSQL_MEMORY_LIMIT_MB=1024`, um banco e um
+  Os testes `[Trait("Category","Infra")]` usam Testcontainers com o SQL Server fixado por tag de patch (`2022-CU27-ubuntu-22.04`) e o RabbitMQ por digest, `MSSQL_MEMORY_LIMIT_MB=1024`, um banco e um
   virtual host por teste, e provam: outbox atomico (commit entrega, rollback nao), mensagem duplicada (mesmo `MessageId`) processada 1x,
   concorrencia da mesma ordem, tombstone, webhook ponta a ponta com o gateway Fake, reconciliador, retry do EF fora de consumer,
   esquema/indices da migration e repositorios.

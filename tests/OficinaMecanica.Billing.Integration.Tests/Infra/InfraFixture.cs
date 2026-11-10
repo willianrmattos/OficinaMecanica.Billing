@@ -7,11 +7,11 @@ namespace OficinaMecanica.Billing.Integration.Tests.Infra;
 
 // Um SQL Server e um RabbitMQ reais (Testcontainers) para a bateria inteira; cada teste ganha um banco e um virtual
 // host próprios, então os testes não se enxergam e nenhum precisa subir containers de novo.
-// As imagens são fixadas por digest (o tag fica só para leitura): o resultado não muda quando o tag "latest" andar.
+// Fixo o SQL Server pelo tag de patch (CU27) e o RabbitMQ pelo digest: o resultado não muda quando o tag "latest" andar, e
+// no SQL Server o digest de um tag flutuante (2022-latest) pode deixar de ser servido pelo registro quando o tag anda.
 public sealed class InfraFixture : IAsyncLifetime
 {
-    public const string ImagemSqlServer =
-        "mcr.microsoft.com/mssql/server:2022-latest@sha256:d38c2a64812d775f844088e4e44ab33846eefc61157431bf9c8a3943a534c22e";
+    public const string ImagemSqlServer = "mcr.microsoft.com/mssql/server:2022-CU27-ubuntu-22.04";
 
     public const string ImagemRabbitMq =
         "rabbitmq:4-management@sha256:af6f50d38098d8bd52fef7f3fa85015dd8b2bf6def58e995bf584ae9ba0f6407";

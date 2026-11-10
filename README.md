@@ -724,7 +724,7 @@ Moq + Bogus, com builders fluentes em um projeto `Tests.Common`.
 | `tests/OficinaMecanica.Billing.Tests.Common` | Builders Bogus (`OrcamentoBuilder`, `PagamentoBuilder`...) e `RelogioFixo` | - |
 
 **Testcontainers** (`[Trait("Category","Infra")]`): sobem **SQL Server e RabbitMQ
-reais** em containers Docker (imagens fixadas por digest), com um banco e um virtual
+reais** em containers Docker (SQL Server por tag de patch, RabbitMQ por digest), com um banco e um virtual
 host por teste, e provam o que mock nenhum prova: outbox atomico (commit entrega,
 rollback nao), mensagem duplicada processada uma unica vez, concorrencia na mesma
 OS, tombstone, webhook de ponta a ponta com o gateway Fake, reconciliador, retry do
