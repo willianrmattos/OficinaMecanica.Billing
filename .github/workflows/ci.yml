@@ -148,7 +148,7 @@ jobs:
       # .trx continuam no artifact e o resultado dos testes continua no log do job.
       - name: Publicar resultados dos testes
         if: ${{ !cancelled() && (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]')) }}
-        uses: dorny/test-reporter@3eeb9fc888e82e8be2fb356bbeec2750231672bc # v1
+        uses: dorny/test-reporter@d1b5dff021aa968b288b02285a8bf47471c5928a # v3.2.0
         with:
           name: Resultados dos Testes
           path: "TestResults/**/*.trx"
