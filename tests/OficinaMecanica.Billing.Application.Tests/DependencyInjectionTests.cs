@@ -102,7 +102,9 @@ public class DependencyInjectionTests
     [Fact]
     public async Task AddApplication_ComandoValido_DeveChegarAoHandlerEPublicarAntesDeSalvar()
     {
-        using var provedor = CriarProvedor();
+        // Optei por registrar o relogio fixo: o comando do builder vale ate InstanteBase + 3 dias e, com o relogio do sistema, o teste passa a
+        // reprovar assim que essa data chega (o orcamento recusa uma validade no passado e o handler publica OrcamentoNaoGerado).
+        using var provedor = CriarProvedor(new RelogioFixo());
         var mediator = provedor.GetRequiredService<IMediator>();
 
         await mediator.Send(new GerarOrcamentoCommandBuilder().Build());
