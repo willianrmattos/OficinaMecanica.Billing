@@ -62,7 +62,9 @@ desligado: a chamada roda com a transacao do consumer aberta e quem repete e o r
 
 ### Negativas
 - A integracao real com o Mercado Pago so e verificada no deploy com credenciais de teste: os testes do adaptador usam um
-  `HttpMessageHandler` falso com respostas no formato documentado.
+  `HttpMessageHandler` falso com respostas no formato documentado. Nota de 2026-11-10: a verificacao foi feita no AKS com as
+  credenciais de teste (sandbox), pelo checkout do Mercado Pago com o comprador de teste; a prova do webhook `payment` e indireta
+  (so o handler consulta o Mercado Pago por id) e estorno e cancelamento pelo staff nao foram exercitados na nuvem (ver `README.md`, secao 11).
 - O SDK mantem estado estatico global; o adaptador evita isso passando o token e o `HttpClient` por requisicao.
 - O estorno de cobranca em duplicidade depende do reconciliador (ate `Billing:ReconciliadorIntervaloSegundos`).
 
