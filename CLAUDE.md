@@ -254,7 +254,7 @@ curto, adaptador com normalizacao/404/4xx e sem corpo do SDK em mensagem, consum
 Decisoes no ADR 0003. Pipeline proprio em `.github/workflows/ci.yml` (nome `CI`; gatilhos push/PR em `main`/`release` e
 `workflow_dispatch`; `concurrency` por ref, `cancel-in-progress` so em PR; `permissions` minimas, `id-token: write` so nos jobs
 de push da imagem e deploy; o job que roda Trivy e as actions de terceiros so tem `contents: read`, e `verificar-workflow.sh` reprova o CI se uma action de terceiros voltar para um job com `id-token`; `actions/checkout` com `persist-credentials: false`).
-Todas as actions (de terceiros e do GitHub) fixadas por **SHA completo de commit**, com a versao num comentario ao lado (`uses: <action>@<sha> # <versao>`; feito em 2026-11-09; o SHA veio da tag do dia e o conteudo do commit nao foi auditado; o Dependabot propoe as atualizacoes no mesmo formato; o Trivy estava como `0.28.0`, tag que nao existe, e agora aponta para a `v0.28.0`). O bloco `env:` do topo do `ci.yml` concentra o que muda de um servico
+Todas as actions (de terceiros e do GitHub) fixadas por **SHA completo de commit**, com a versao num comentario ao lado (`uses: <action>@<sha> # <versao>`; feito em 2026-11-09; o SHA veio da tag do dia e o conteudo do commit nao foi auditado; o Dependabot propoe as atualizacoes no mesmo formato; o Trivy aponta para a `v0.36.0`: a `v0.28.0` chama internamente `setup-trivy@v0.2.1`, tag que deixou de existir, e a `v0.36.0` fixa as actions internas por SHA). O bloco `env:` do topo do `ci.yml` concentra o que muda de um servico
 para outro (ACR, imagem, AKS, Key Vault, secret da connection string, pastas, projetos do EF).
 
 | Job (`name`) | Quando | O que faz |
