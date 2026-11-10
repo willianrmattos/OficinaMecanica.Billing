@@ -182,7 +182,12 @@ public class ExceptionHandlingMiddleware
                 break;
         }
 
+        // Optei por não passar o RequestAborted: o ramo da requisição abandonada (499) já foi tratado antes, e este corpo é a
+        // resposta de erro ao cliente. Com o token, a escrita lançaria OperationCanceledException de dentro do tratador de
+        // erros se o cliente saísse neste instante, e a exceção original se perderia.
+#pragma warning disable S8949 // Pass the 'context.RequestAborted' to this method
         await response.WriteAsync(JsonSerializer.Serialize(erro, OpcoesJson));
+#pragma warning restore S8949
     }
 }
 
