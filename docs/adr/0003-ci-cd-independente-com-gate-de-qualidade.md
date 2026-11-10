@@ -97,11 +97,14 @@ major do `MassTransit*` (e o major do EF Core, que continua no 9.x por causa do 
 secret `billing-sql-connection-string`). Os jobs que falam com o Azure declaram `id-token: write`; os demais ficam com
 `contents: read`. Todo `actions/checkout` usa `persist-credentials: false`.
 
-**Actions de terceiros por SHA (BLOQUEANTE da publicacao).** Hoje as actions estao pinadas por tag (major ou minor), e uma tag e
-mutavel: quem controla a action pode mover a tag para outro codigo. Antes do primeiro push real, `aquasecurity/trivy-action`,
-`dorny/test-reporter` e as demais actions de terceiros precisam ser fixadas pelo SHA completo, verificado no repositorio de cada
-uma (comentario com a versao ao lado); as tags tambem nao puderam ser conferidas aqui sem tocar o GitHub. O Dependabot de
-`github-actions` mantem os SHAs depois.
+**Actions por SHA (aplicado em 2026-11-09).** Todas as actions do `ci.yml`, de terceiros (`docker/*`, `aquasecurity/trivy-action`,
+`dorny/test-reporter`) e do GitHub/Microsoft (`actions/*`, `azure/*`), estao fixadas pelo SHA completo do commit, com a versao num
+comentario ao lado (`uses: actions/checkout@<sha> # v4.4.0`). Uma tag e mutavel: quem controla a action pode move-la para outro
+codigo; o SHA nao. O SHA veio da tag que o workflow ja usava, resolvida pela API do GitHub para o commit em que ela apontava no dia,
+e a versao do comentario e a tag semver mais especifica que aponta para o mesmo commit (no `dorny/test-reporter` e `v1`). O pin
+nao audita o conteudo: impede que a tag seja movida depois, mas nao prova que o commit de hoje e confiavel. O Trivy estava
+referenciado como `0.28.0`, tag que nao existe no repositorio da action (a real e `v0.28.0`); o pin aponta para a `v0.28.0`.
+O Dependabot de `github-actions` propoe as atualizacoes mantendo o formato `@sha # versao`.
 
 **Migrations no deploy.** O job `deploy-to-aks` le a connection string do Key Vault na mesma sessao OIDC e roda
 `dotnet ef database update` (ferramenta fixada em `dotnet-tools.json`) antes do rollout, com ate 5 tentativas por causa do
@@ -160,8 +163,8 @@ dependencia nao pode reiniciar o pod) e `/health/ready` roda os checks da tag `r
 - Com uma replica e `maxSurge: 0` ha uma janela sem pod a cada deploy (ate o `startupProbe` passar); os comandos da saga
   esperam no RabbitMQ e o Mercado Pago reenvia o webhook que receber 5xx.
 - O runner do GitHub precisa alcancar o Azure SQL (regra de firewall do servidor), a mesma premissa do monolito.
-- Antes da publicacao o workflow so foi validado estaticamente e pelos scripts, e as actions de terceiros estao por tag
-  mutavel: fixa-las por SHA verificado e requisito BLOQUEANTE antes do primeiro push real (ver Decisao).
+- Antes da publicacao o workflow so foi validado estaticamente e pelos scripts, e as actions estao fixadas por SHA sem que o
+  conteudo de cada commit fixado tenha sido auditado (ver a decisao "Actions por SHA").
 - Desvio do plano (secao 8, "testes de Infra em job separado"): os testes de Infra rodam num step proprio do MESMO job
   `Build & Test`. O gate de cobertura exige o OpenCover de todos os projetos no mesmo workspace; um job de Infra reconstruiria
   a solucao, transferiria artifacts e obrigaria um terceiro job para unir e aplicar o gate, sem ganho de isolamento (o runner e

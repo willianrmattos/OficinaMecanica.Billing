@@ -254,7 +254,7 @@ curto, adaptador com normalizacao/404/4xx e sem corpo do SDK em mensagem, consum
 Decisoes no ADR 0003. Pipeline proprio em `.github/workflows/ci.yml` (nome `CI`; gatilhos push/PR em `main`/`release` e
 `workflow_dispatch`; `concurrency` por ref, `cancel-in-progress` so em PR; `permissions` minimas, `id-token: write` so nos jobs
 de push da imagem e deploy; o job que roda Trivy e as actions de terceiros so tem `contents: read`, e `verificar-workflow.sh` reprova o CI se uma action de terceiros voltar para um job com `id-token`; `actions/checkout` com `persist-credentials: false`).
-Todas as actions com versao pinada por **tag de major/minor**, que e mutavel: pinar por SHA e requisito BLOQUEANTE da publicacao (ultima secao). O bloco `env:` do topo do `ci.yml` concentra o que muda de um servico
+Todas as actions (de terceiros e do GitHub) fixadas por **SHA completo de commit**, com a versao num comentario ao lado (`uses: <action>@<sha> # <versao>`; feito em 2026-11-09; o SHA veio da tag do dia e o conteudo do commit nao foi auditado; o Dependabot propoe as atualizacoes no mesmo formato; o Trivy estava como `0.28.0`, tag que nao existe, e agora aponta para a `v0.28.0`). O bloco `env:` do topo do `ci.yml` concentra o que muda de um servico
 para outro (ACR, imagem, AKS, Key Vault, secret da connection string, pastas, projetos do EF).
 
 | Job (`name`) | Quando | O que faz |
@@ -337,10 +337,7 @@ em `release`; o merge de `release` em `main` e do usuario); preencher `billing_g
 `OficinaMecanica.Infra` (aplicar) e configurar as variaveis OIDC; criar o secret `SONAR_TOKEN` e as variaveis do Sonar (e o projeto no
 SonarCloud); rodar uma vez o CI para os checks existirem e entao criar o ruleset
 (`gh api --method POST repos/willianrmattos/OficinaMecanica.Billing/rulesets --input .github/rulesets/protect-main-release.json`; sem o
-`SONAR_TOKEN` o job `Quality` reprova e, com ele exigido, bloqueia todo PR); **BLOQUEANTE antes do primeiro push
-real: pinar `aquasecurity/trivy-action`, `dorny/test-reporter` e as demais actions de terceiros (`docker/*`, `azure/*`, `SonarSource`...) por SHA completo
-verificado no repositorio de cada action** (hoje estao por tag, que e mutavel, e as tags nao puderam ser conferidas sem tocar o GitHub; o Dependabot de
-`github-actions` mantem os SHAs depois); confirmar a premissa da APIM (concatenacao do path do backend `/billing`) e, depois do apply do Infra, que a policy
+`SONAR_TOKEN` o job `Quality` reprova e, com ele exigido, bloqueia todo PR); confirmar a premissa da APIM (concatenacao do path do backend `/billing`) e, depois do apply do Infra, que a policy
 (ja existe la) devolve 404 para `/health/ready` e `/metrics` vindos de fora; `kubectl describe node` com folga de CPU antes do primeiro deploy.
 
 ## Contratos

@@ -870,18 +870,20 @@ e [BillingDb e usuarios dedicados](../OficinaMecanica.Banco/docs/adr/0003-billin
 
 ## 10. Limitacoes conhecidas e pendencias
 
-Registradas com honestidade; as marcadas como **bloqueante** precisam ser resolvidas
-antes da publicacao.
+Registradas com honestidade; nenhuma esta marcada como **bloqueante** hoje, e as que
+vierem a ser marcadas precisam ser resolvidas antes da publicacao.
 
 **Pipeline e publicacao**
 
-- **Bloqueante: actions de terceiros pinadas por tag, nao por SHA.** Hoje o `ci.yml`
-  referencia `aquasecurity/trivy-action`, `dorny/test-reporter`, `docker/*`,
-  `azure/*` e `actions/*` por tag de versao, que e mutavel (quem controla a action
-  pode mover a tag para outro codigo). Antes do primeiro push real, todas precisam
-  ser fixadas pelo **SHA completo** do commit, conferido no repositorio de cada
-  action (as tags nem puderam ser conferidas sem acessar o GitHub). Depois, o
-  Dependabot de `github-actions` mantem os SHAs.
+- **Actions fixadas por SHA completo (feito em 2026-11-09), sem auditoria do
+  conteudo.** Todas as actions do `ci.yml` (`actions/*`, `azure/*`, `docker/*`,
+  `aquasecurity/trivy-action`, `dorny/test-reporter`) usam
+  `uses: <action>@<sha completo> # <versao>`. O SHA veio da tag que o workflow usava,
+  resolvida no dia; o conteudo daquele commit nao foi auditado, entao o pin impede
+  que a tag seja movida depois, mas nao prova que o commit de hoje e confiavel. O
+  Dependabot de `github-actions` propoe as atualizacoes mantendo o formato
+  `@sha # versao`. O Trivy estava referenciado como `0.28.0`, tag que nao existe no
+  repositorio da action; o pin aponta para a `v0.28.0`.
 - **O workflow nunca rodou no GitHub.** A ordem dos jobs e as condicoes `if` so se
   provam na primeira execucao real; apenas a separacao de privilegios tem teste
   automatico.
@@ -991,10 +993,10 @@ antes da publicacao.
 
 ### Passos, na ordem
 
-1. **Pinar as actions por SHA** (ver [Limitacoes](#10-limitacoes-conhecidas-e-pendencias)):
-   substituir as tags do `.github/workflows/ci.yml` pelo SHA completo verificado de
-   cada action, com um comentario da versao ao lado. E bloqueante: sem isso, nao
-   publicar.
+1. **Actions fixadas por SHA** (feito em 2026-11-09; ver
+   [Limitacoes](#10-limitacoes-conhecidas-e-pendencias)): o `.github/workflows/ci.yml`
+   usa o SHA completo de cada action, com a versao num comentario ao lado, e o
+   Dependabot mantem os SHAs. Nada a fazer neste passo.
 2. **Criar o repositorio no GitHub** (`willianrmattos/OficinaMecanica.Billing`, o nome
    que os scripts e o Terraform esperam), ainda vazio e **sem empurrar nada**.
 3. **Aplicar o Banco e depois o Infra** (nessa ordem). O primeiro `terraform apply` do
