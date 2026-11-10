@@ -1,0 +1,8 @@
+# Goldens dos contratos de mensagem: LF fixo para o checksum entre repositorios nao depender do autocrlf.
+tests/**/Golden/*.json text eol=lf
+
+# OpenAPI versionado: LF fixo, como o scripts/exportar-swagger.sh grava, para o "esta em dia" do CI nao depender do autocrlf.
+docs/openapi.json text eol=lf
+
+# Scripts de shell: LF fixo (com autocrlf no Windows o checkout viraria CRLF e o bash recusaria o carriage return).
+*.sh text eol=lf

@@ -1,0 +1,31 @@
+# Defini o teto em 2 replicas: o no unico do AKS (Standard_D4as_v4) nao tem folga de CPU de requests para mais que isso, e
+# uma replica extra do Billing e seguro (MessageId deterministico + inbox deduplicam; o reconciliador e idempotente).
+# Os percentuais sao sobre o REQUEST do deployment.yaml (CPU 50m, memoria 192Mi), que e pequeno de proposito:
+# 70% de 50m sao 35m, entao qualquer rajada de webhooks faz a segunda replica subir.
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: oficinamecanica-billing
+  namespace: default
+  labels:
+    app: oficinamecanica-billing
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: oficinamecanica-billing
+  minReplicas: 1
+  maxReplicas: 2
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80

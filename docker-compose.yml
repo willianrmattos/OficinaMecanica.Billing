@@ -1,0 +1,97 @@
+# Billing local, self-contained no padrao dos repos irmaos (OficinaMecanica, OficinaMecanica.Seguranca).
+#
+# Portas do host (escolhidas para nao colidir com os outros composes do ecossistema):
+#   API ........ 5001   (monolito usa 5000, Seguranca 7071)
+#   SQL Server . 1435   (monolito usa 1433, Seguranca 1434)
+#   RabbitMQ ... 5673 (AMQP) e 15673 (management)   (o compose do monolito usara 5672 e 15672)
+#
+# Dois modos:
+#   docker compose up -d                          Billing + SQL Server; o broker e o do compose do OficinaMecanica,
+#                                                 alcancado por host.docker.internal:5672 (suba o monolito antes).
+#   docker compose --profile standalone up -d     tambem sobe um RabbitMQ proprio; use RABBITMQ_HOST=rabbitmq no .env.
+#
+# Segredos vem so do .env (ver .env.example); nada de valor real neste arquivo.
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: oficinamecanica-billing:latest
+    container_name: ${BILLING_CONTAINER_PREFIX:-oficinamecanica-billing}-api
+    depends_on:
+      sqlserver:
+        condition: service_healthy
+      # Fora do profile "standalone" o rabbitmq nao existe, entao a dependencia e opcional.
+      rabbitmq:
+        condition: service_healthy
+        required: false
+    environment:
+      ASPNETCORE_ENVIRONMENT: "Development"
+      DOTNET_SYSTEM_GLOBALIZATION_INVARIANT: "false"
+      ConnectionStrings__DefaultConnection: "Server=tcp:sqlserver,1433;Database=BillingDb;User Id=sa;Password=${MSSQL_SA_PASSWORD};Encrypt=True;TrustServerCertificate=True;Connection Timeout=30;"
+      JwtSettings__Issuer: "OficinaMecanica.Seguranca"
+      JwtSettings__Audience: "OficinaMecanica.Client"
+      # Aponta para o OficinaMecanica.Seguranca rodando local (mesmo precedente do monolito).
+      JwtSettings__JwksUri: "http://host.docker.internal:7071/.well-known/jwks.json"
+      RabbitMq__Host: "${RABBITMQ_HOST:-host.docker.internal}"
+      RabbitMq__Port: "${RABBITMQ_PORT:-5672}"
+      RabbitMq__VirtualHost: "/"
+      RabbitMq__Username: "${RABBITMQ_USER}"
+      RabbitMq__Password: "${RABBITMQ_PASSWORD}"
+      # Gateway Fake por padrao: nenhuma credencial do Mercado Pago e necessaria em desenvolvimento.
+      Pagamento__Provider: "${PAGAMENTO_PROVIDER:-Fake}"
+      Fake__WebhookSecret: "${FAKE_WEBHOOK_SECRET}"
+      MercadoPago__AccessToken: "${MERCADOPAGO_ACCESS_TOKEN:-}"
+      MercadoPago__WebhookSecret: "${MERCADOPAGO_WEBHOOK_SECRET:-}"
+      MercadoPago__NotificationBaseUrl: "${MERCADOPAGO_NOTIFICATION_BASE_URL:-}"
+      Otel__Endpoint: ""
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "${BILLING_API_HOST_PORT:-5001}:8080"
+    restart: unless-stopped
+
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: ${BILLING_CONTAINER_PREFIX:-oficinamecanica-billing}-sqlserver
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: "${MSSQL_SA_PASSWORD}"
+      MSSQL_PID: "Developer"
+      # O banco do Billing e pequeno; o limite evita o SQL Server ocupar a memoria da maquina de desenvolvimento.
+      MSSQL_MEMORY_LIMIT_MB: "${MSSQL_MEMORY_LIMIT_MB:-1024}"
+    ports:
+      - "${BILLING_SQL_HOST_PORT:-1435}:1433"
+    volumes:
+      - sqlserver_data:/var/opt/mssql
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P \"$$MSSQL_SA_PASSWORD\" -C -Q 'SELECT 1' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    restart: unless-stopped
+
+  rabbitmq:
+    image: rabbitmq:4.4.0-management
+    container_name: ${BILLING_CONTAINER_PREFIX:-oficinamecanica-billing}-rabbitmq
+    profiles: ["standalone"]
+    environment:
+      RABBITMQ_DEFAULT_USER: "${RABBITMQ_USER}"
+      RABBITMQ_DEFAULT_PASS: "${RABBITMQ_PASSWORD}"
+    ports:
+      - "${BILLING_RABBIT_HOST_PORT:-5673}:5672"
+      - "${BILLING_RABBIT_MGMT_HOST_PORT:-15673}:15672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD-SHELL", "rabbitmq-diagnostics -q ping"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 20s
+    restart: unless-stopped
+
+volumes:
+  sqlserver_data:
+  rabbitmq_data:

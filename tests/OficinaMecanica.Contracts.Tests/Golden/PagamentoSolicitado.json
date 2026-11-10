@@ -1,0 +1,8 @@
+{
+  "messageId": "00000000-0000-0000-0000-000000000001",
+  "ordemDeServicoId": "00000000-0000-0000-0000-000000000002",
+  "ocorridoEm": "2026-11-07T12:00:00+00:00",
+  "pagamentoId": "00000000-0000-0000-0000-000000000004",
+  "linkPagamento": "https://www.mercadopago.com.br/checkout/v1/redirect?pref_id=123",
+  "expiraEm": "2026-11-10T12:00:00+00:00"
+}
