@@ -8,12 +8,13 @@ quando a Saga desfaz uma etapa. E um microsservico .NET 8 com banco proprio
 (Azure SQL `BillingDb`), que conversa com os demais servicos por mensageria
 (RabbitMQ, via MassTransit 8.5.12).
 
-> **Estado de publicacao: nada foi publicado.** Este repositorio ainda nao existe
-> no GitHub, o pipeline de CI/CD nunca rodou no GitHub Actions, nenhuma imagem foi
-> enviada ao registry, nada foi implantado no cluster e a integracao real com o
-> Mercado Pago nunca foi exercitada. Tudo o que esta descrito como "local" foi
-> executado nesta maquina; tudo o que depende da publicacao esta marcado como
-> **ainda nao executado** (resumo na secao 1 e roteiro completo na secao 11).
+> **Estado de publicacao: publicado em 2026-11-09/10.** Os PRs #1 e #2 foram
+> mergeados em `release` e o #3 levou `release` para `main`; os pipelines de `main`
+> ficaram verdes (Build & Test, Quality/SonarCloud, Scan Image/Trivy, Build & Push no
+> ACR e Deploy no AKS). O Billing roda no AKS (`aksfiap`) com 2 replicas, atras da
+> rota `billingserver` da APIM (`apimfiap`), com o gateway real do Mercado Pago e
+> credenciais de teste (sandbox). A Saga foi validada ponta a ponta no AKS em
+> 2026-11-10. Resumo na secao 1, registro e pendencias na secao 11.
 
 ## Sumario
 
@@ -27,7 +28,7 @@ quando a Saga desfaz uma etapa. E um microsservico .NET 8 com banco proprio
 8. [CI/CD e Kubernetes](#8-cicd-e-kubernetes)
 9. [Decisoes de arquitetura](#9-decisoes-de-arquitetura)
 10. [Limitacoes conhecidas e pendencias](#10-limitacoes-conhecidas-e-pendencias)
-11. [Publicacao (ainda nao executada)](#11-publicacao-ainda-nao-executada)
+11. [Publicacao e validacao no AKS](#11-publicacao-e-validacao-no-aks)
 
 ---
 
@@ -102,10 +103,11 @@ a Execucao: quem fala com os dois e o orquestrador.
    o Billing so valida.
 ```
 
-A rota `billingserver` da APIM e o RabbitMQ no cluster so existem depois que a
-infraestrutura for aplicada (ver [secao 11](#11-publicacao-ainda-nao-executada)).
-Localmente, o broker e o do `docker compose` do OS Service ou um broker proprio
-deste repositorio (ver [secao 6](#6-como-rodar-localmente)).
+No AKS, a rota `billingserver` da APIM e o RabbitMQ (StatefulSet no namespace
+`messaging`) vem do repositorio `OficinaMecanica.Infra`, ja aplicado (ver
+[secao 11](#11-publicacao-e-validacao-no-aks)). Localmente, o broker e o do
+`docker compose` do OS Service ou um broker proprio deste repositorio (ver
+[secao 6](#6-como-rodar-localmente)).
 
 ### Repositorios do ecossistema
 
@@ -137,17 +139,21 @@ pasta; em um repositorio publicado isoladamente eles nao resolvem.
 | JWT / JWKS | JSON Web Token (a credencial enviada pelo cliente) / JSON Web Key Set (a chave publica que valida a assinatura do JWT) |
 | APIM, AKS, ACR | Azure API Management (porta de entrada publica), Azure Kubernetes Service (cluster), Azure Container Registry (registry de imagens) |
 
-### O que roda hoje e o que depende da publicacao
+### Estado atual: o que foi publicado e validado
 
-| Ja executado nesta maquina | Ainda nao executado (depende da publicacao) |
-|----------------------------|---------------------------------------------|
-| Build Release sem avisos e os 983 testes, incluindo os de infraestrutura com SQL Server e RabbitMQ reais em containers ([cobertura](docs/relatorios/cobertura.md)) | Qualquer execucao do workflow `.github/workflows/ci.yml` no GitHub Actions |
-| Stack local com `docker compose` (API, SQL Server, RabbitMQ opcional) e gateway de pagamento Fake | SonarCloud (analise e Quality Gate) |
-| `bash scripts/ci-local.sh`: os mesmos passos do job `Build & Test` | Scan de vulnerabilidades da imagem (Trivy), push no ACR e deploy no AKS |
-| Validacao estatica do workflow (`actionlint`), dos manifests (`kubeconform`) e `docker build` da imagem | Migration aplicada no `BillingDb` real e aplicacao dos manifests em um cluster |
-| Scripts de CI testados com entradas sinteticas e mutantes (`scripts/testar-scripts.sh`) | Identidade OIDC do GitHub Actions, rota `billingserver` na APIM e RabbitMQ no cluster (todos criados pelo repositorio `OficinaMecanica.Infra`, que tambem nao foi aplicado) |
-| Webhook assinado de ponta a ponta com o gateway Fake | Integracao real com o Mercado Pago (so testada com respostas simuladas no formato documentado) |
-| | Ruleset de protecao de branch (`.github/rulesets/protect-main-release.json`, criado com a GitHub CLI na publicacao) |
+| Item | Estado em 2026-11-10 |
+|------|----------------------|
+| Build Release sem avisos e os 983 testes, incluindo os de infraestrutura com SQL Server e RabbitMQ reais em containers ([cobertura](docs/relatorios/cobertura.md)) | Rodam na maquina de desenvolvimento (`scripts/ci-local.sh`) e no job `Build & Test` do GitHub Actions, verde na `main` |
+| Stack local com `docker compose` (API, SQL Server, RabbitMQ opcional) e gateway de pagamento Fake; webhook assinado de ponta a ponta com o Fake | Continua sendo o modo de desenvolvimento; o Fake nunca roda fora de `Development` |
+| Scripts de CI testados com entradas sinteticas e mutantes (`scripts/testar-scripts.sh`) | 70 casos e 33 mutantes detectados (medido em 2026-11-10); rodam no `Build & Test` |
+| Workflow `.github/workflows/ci.yml` | Executa no GitHub Actions desde 2026-11-09. Pipelines de `main` verdes: Build & Test, Quality (SonarCloud), Scan Image (Trivy), Build & Push no ACR e Deploy no AKS |
+| Cobertura de linhas | SonarCloud (`main`): 95,3%. Script local (`scripts/cobertura.sh`, numero "com exclusoes" que vale para o gate de 80%): 99,60% |
+| Migration e manifests `k8s/billing/` | Aplicados no AKS (`aksfiap`) pelo job de deploy, com 2 replicas; o `BillingDb` e acessado por usuario SQL dedicado, so naquele banco |
+| Identidade OIDC do GitHub Actions, rota `billingserver` na APIM e RabbitMQ 4.4.0 no cluster | Criados e aplicados pelo repositorio `OficinaMecanica.Infra` |
+| Protecao de branch (`.github/rulesets/protect-main-release.json`) | Ruleset `protect-main-release` ativo em `main` e `release`, exigindo `Build & Test` e `Quality` |
+| Mercado Pago | Gateway real so em `Production`, com credenciais de teste (sandbox). O webhook entra anonimo em `https://apimfiap.azure-api.net/billingserver/webhooks/mercadopago` e e autenticado pela assinatura HMAC (`x-signature`). Validado ponta a ponta no AKS em 2026-11-10 (ver [secao 11](#11-publicacao-e-validacao-no-aks)) |
+
+O que continua aberto esta na [secao 10](#10-limitacoes-conhecidas-e-pendencias) e no fim da [secao 11](#11-publicacao-e-validacao-no-aks).
 
 ---
 
@@ -459,9 +465,10 @@ Billing grava o estado `Estornando` **antes** de chamar o gateway.
 | 401, 403 (credencial), 408, 409, 423, 425, 429 e todo 5xx | **Falha tecnica**: o retry da mensagem repete e a falha e alertada. Transformar um token errado em "pagamento recusado" cancelaria a ordem do cliente por um erro de configuracao nosso |
 | 404 ao consultar um pagamento | "Ainda nao existe": ver acima (503 para o webhook) |
 
-A integracao real so sera verificada no primeiro deploy com credenciais de teste
-(sandbox) do Mercado Pago: os testes do adaptador usam um `HttpMessageHandler` falso
-com respostas no formato documentado.
+A integracao real foi verificada no AKS em 2026-11-10 com credenciais de teste
+(sandbox) do Mercado Pago (ver [secao 11](#11-publicacao-e-validacao-no-aks)); os
+testes automatizados do adaptador usam um `HttpMessageHandler` falso com respostas
+no formato documentado.
 
 ---
 
@@ -769,13 +776,14 @@ O relatorio HTML da cobertura sai em `TestResults/report-com-exclusoes/index.htm
 - **Medicao registrada (2026-11-08)**: **983 testes** passando; cobertura de linhas
   **bruta 98,57%** (3508 de 3559) e **com exclusoes 99,60%** (1991 de 1999). Detalhes,
   exclusoes e justificativas em [docs/relatorios/cobertura.md](docs/relatorios/cobertura.md).
-- **SonarCloud** como quality gate bloqueante no job `Quality` (ainda nao executado:
-  depende da publicacao). As exclusoes de cobertura do Sonar sao as mesmas do gate.
+- **SonarCloud** como quality gate bloqueante no job `Quality`, que roda no CI desde
+  2026-11-09 (cobertura do Billing no Sonar, na `main`: 95,3%; pelo script local:
+  99,60%). As exclusoes de cobertura do Sonar sao as mesmas do gate.
 - **Os scripts de decisao tem testes**: `scripts/testar-scripts.sh` exercita o gate, o
   guardrail do MassTransit, a separacao de privilegios do `ci.yml` e outros scripts com
   entradas sinteticas (79,9% reprova, 80,0% aprova...) e **planta defeitos em copias**
-  dos scripts exigindo que cada um seja detectado (72 casos e 33 mutantes na ultima
-  execucao completa). Sem isso, um gate que sempre aprova so seria percebido tarde.
+  dos scripts exigindo que cada um seja detectado (70 casos e 33 mutantes na ultima
+  execucao completa, medida em 2026-11-10). Sem isso, um gate que sempre aprova so seria percebido tarde.
 
 ---
 
@@ -783,9 +791,10 @@ O relatorio HTML da cobertura sai em `TestResults/report-com-exclusoes/index.htm
 
 Pipeline proprio em [`.github/workflows/ci.yml`](.github/workflows/ci.yml) (nome
 `CI`), com cinco jobs encadeados. Roda em push e pull request para `main` e `release`
-e sob demanda (`workflow_dispatch`); em PR nunca publica imagem. **Nunca foi
-executado no GitHub**: foi validado localmente (`actionlint`, `kubeconform`,
-`docker build` e a execucao dos scripts e do `ci-local.sh`).
+e sob demanda (`workflow_dispatch`); em PR nunca publica imagem. **Executa no
+GitHub Actions desde 2026-11-09** e os pipelines de `main` ficaram verdes; antes
+disso foi validado localmente (`actionlint`, `kubeconform`, `docker build` e a
+execucao dos scripts e do `ci-local.sh`).
 
 | Job (nome no GitHub) | Quando | O que garante |
 |----------------------|--------|---------------|
@@ -813,8 +822,10 @@ descreve o ruleset do GitHub para `main` e `release`: sem exclusao nem force-pus
 pull request obrigatorio e os checks `Build & Test` e `Quality` exigidos. Nao ha
 script para aplica-lo: o JSON e a entrada direta da GitHub CLI
 (`gh api --method POST repos/willianrmattos/OficinaMecanica.Billing/rulesets --input .github/rulesets/protect-main-release.json`),
-executada manualmente na publicacao, depois do primeiro CI (passo 7 da secao
-"11. Publicacao"), e nada a executa automaticamente. O
+executada manualmente depois do primeiro CI (passo 7 da secao
+"11. Publicacao e validacao no AKS"), e nada a executa automaticamente. O ruleset
+`protect-main-release` esta ativo em `main` e `release` (conferido em 2026-11-10)
+e exige os mesmos dois checks do JSON. O
 Dependabot (`.github/dependabot.yml`) acompanha NuGet, GitHub Actions e Docker
 semanalmente e ignora o major do MassTransit e do EF Core.
 
@@ -870,8 +881,9 @@ e [BillingDb e usuarios dedicados](../OficinaMecanica.Banco/docs/adr/0003-billin
 
 ## 10. Limitacoes conhecidas e pendencias
 
-Registradas com honestidade; nenhuma esta marcada como **bloqueante** hoje, e as que
-vierem a ser marcadas precisam ser resolvidas antes da publicacao.
+Registradas com honestidade, no estado de 2026-11-10 (depois da publicacao); nenhuma
+esta marcada como **bloqueante** hoje, e as que vierem a ser marcadas precisam ser
+resolvidas antes do proximo deploy.
 
 **Pipeline e publicacao**
 
@@ -884,11 +896,13 @@ vierem a ser marcadas precisam ser resolvidas antes da publicacao.
   Dependabot de `github-actions` propoe as atualizacoes mantendo o formato
   `@sha # versao`. O Trivy estava referenciado como `0.28.0`, tag que nao existe no
   repositorio da action; o pin aponta hoje para a `v0.36.0`: a `v0.28.0` chama internamente `setup-trivy@v0.2.1`, tag que deixou de existir, e a `v0.36.0` fixa as actions internas por SHA.
-- **O workflow nunca rodou no GitHub.** A ordem dos jobs e as condicoes `if` so se
-  provam na primeira execucao real; apenas a separacao de privilegios tem teste
-  automatico.
-- **O ruleset de protecao de branch replica o dos outros repositorios**, mas nao foi
-  possivel comparar com o GitHub: confirmar na publicacao.
+- **O workflow roda no GitHub desde 2026-11-09.** A ordem dos jobs e as condicoes `if`
+  foram exercitadas pelos pipelines de `main` (verdes), mas continuam sem teste
+  automatico: apenas a separacao de privilegios tem (`scripts/verificar-workflow.sh`).
+- **O ruleset de protecao de branch esta ativo** em `main` e `release` e exige
+  `Build & Test` e `Quality`, como o JSON versionado. Nos repositorios do OS Service e
+  do Seguranca o ruleset ativo ainda nao exige `Quality` (pendencia do ecossistema,
+  fora deste repositorio).
 - **`Quality` pulado em PR de fork** conta como satisfeito para o GitHub: PR de fork
   nao passa pelo Sonar e depende de revisao.
 - O runner do GitHub precisa alcancar o Azure SQL (regra de firewall do servidor), a
@@ -899,17 +913,20 @@ vierem a ser marcadas precisam ser resolvidas antes da publicacao.
 
 **Rede e exposicao (APIM)**
 
-- **Premissa nao confirmada da APIM**: o backend `billing` usa o prefixo `/billing` e a
-  premissa e que a APIM concatena o path do backend com o da operacao. Nao da para
-  provar sem `terraform apply`; a alternativa (reescrita de URI na policy) esta
-  descrita no repositorio `OficinaMecanica.Infra`.
+- **Premissa da APIM confirmada (2026-11-10)**: o backend `billing` usa o prefixo
+  `/billing` e a premissa era que a APIM concatena o path do backend com o da
+  operacao. O webhook do Mercado Pago entra por `/billingserver/webhooks/mercadopago`
+  e o `/health/ready` responde pela rota `billingserver`, entao a premissa vale; a
+  alternativa (reescrita de URI na policy) continua descrita no repositorio
+  `OficinaMecanica.Infra`.
 - **`/health/ready` e `/metrics` sao anonimos e a rota `billingserver` da APIM repassa
   qualquer path**, entao ficam alcancaveis da internet. O cache de 5 s limita o custo
   da prontidao a uma conexao SQL e uma AMQP a cada 5 s e o corpo nao vaza excecao, mas
-  o endpoint continua publico. **No `OficinaMecanica.Infra`** a policy da APIM que
-  devolve 404 para `/health/ready` e `/metrics` vindos de fora ja existe e fica ativa
-  quando o Terraform do Infra for aplicado (ainda nao foi); a probe do Kubernetes
-  bate direto no pod e nao passa pela APIM.
+  o endpoint continua publico. A policy da APIM que devolve 404 para `/health/ready` e
+  `/metrics` vindos de fora esta no Terraform do `OficinaMecanica.Infra` (ADR 0007 de
+  la), mas em 2026-11-10 os dois endpoints ainda respondem 200 pela APIM em todos os
+  servicos: **pendencia aberta**. A probe do Kubernetes bate direto no pod e nao passa
+  pela APIM.
 
 **Capacidade e operacao**
 
@@ -917,7 +934,8 @@ vierem a ser marcadas precisam ser resolvidas antes da publicacao.
   isso o HPA vai de 1 a 2 replicas e o rollout usa `maxSurge: 0`: com uma replica, ha
   uma janela sem pod a cada deploy (os comandos esperam no RabbitMQ e o Mercado Pago
   reenvia o webhook que receber 5xx, entao nada se perde). Conferir a folga de CPU
-  (`kubectl describe node`) antes do primeiro deploy.
+  (`kubectl describe node`) ao mudar requests ou os limites do HPA. No AKS rodam 2
+  replicas (2026-11-10).
 - **Sem alerta do broker nem do outbox**: com o RabbitMQ fora, `/health/ready` segue
   200 e so o corpo mostra `rabbitmq` como `Degraded`. Nao existe metrica de mensagens
   pendentes no outbox nem alerta; fica como pendencia.
@@ -940,8 +958,13 @@ vierem a ser marcadas precisam ser resolvidas antes da publicacao.
 
 - **MassTransit 8.x perde o suporte oficial em 31/12/2026** (e a 9.x e comercial). A
   isolacao na Infrastructure e a rota de saida (Rebus ou um fork).
-- **Integracao real com o Mercado Pago nao verificada**: so no primeiro deploy com
-  credenciais de teste; os testes do adaptador usam respostas simuladas. O SDK mantem
+- **.NET 8 e LTS ate novembro de 2026** (alvo `net8.0`): a migracao para uma versao
+  com suporte vigente fica como pendencia.
+- **Integracao real com o Mercado Pago verificada so em sandbox**: o Billing de
+  producao usa as credenciais de teste do Mercado Pago, e a Saga foi validada no AKS
+  em 2026-11-10 (secao 11). A prova do webhook `payment` e indireta, e os cenarios de
+  estorno e de cancelamento pelo staff nao foram exercitados na nuvem (so local e nos
+  testes). Os testes automatizados do adaptador usam respostas simuladas. O SDK mantem
   estado estatico global; o adaptador o evita passando token e `HttpClient` por
   requisicao.
 - O estorno de cobranca em duplicidade depende do reconciliador (ate
@@ -959,26 +982,83 @@ vierem a ser marcadas precisam ser resolvidas antes da publicacao.
 
 ---
 
-## 11. Publicacao (ainda nao executada)
+## 11. Publicacao e validacao no AKS
 
-> **Nada desta secao foi executado.** E o roteiro para quando houver autorizacao e
-> credenciais. Os nomes de variaveis, secrets e recursos abaixo vem dos arquivos deste
-> repositorio e dos `CLAUDE.md`/READMEs dos repositorios
-> [OficinaMecanica.Infra](../OficinaMecanica.Infra) e
-> [OficinaMecanica.Banco](../OficinaMecanica.Banco).
+> **Publicado em 2026-11-09/10 e validado no AKS em 2026-11-10.** Esta secao registra o
+> que foi publicado e o que a validacao observou; o roteiro mais abaixo fica como
+> referencia para reaplicar a configuracao. As pendencias que continuam abertas estao
+> no fim.
 
-### Pre-requisitos
+### O que foi publicado (2026-11-09/10)
+
+- **Repositorio e PRs**: `willianrmattos/OficinaMecanica.Billing`. Os PRs #1 (o
+  servico) e #2 (atualiza o `trivy-action` para a `v0.36.0`) foram mergeados em
+  `release`; o PR #3 levou `release` para `main`.
+- **Pipelines de `main` verdes**: Build & Test, Quality (SonarCloud), Scan Image
+  (Trivy), Build & Push no ACR e Deploy no AKS. A migration roda no job de deploy.
+- **No AKS** (`aksfiap`): o Billing roda com 2 replicas, ao lado do OS Service e da
+  Execucao (2 replicas cada), do RabbitMQ 4.4.0 (StatefulSet, namespace `messaging`)
+  e do ingress-nginx. O Seguranca roda na Function App `funcsegurancafiap`.
+- **APIM** (`apimfiap`): rotas `oficinaserver`, `billingserver`, `execucaoserver` e
+  `segurancaserver`.
+- **Banco**: Azure SQL `BillingDb` com usuario SQL dedicado, so naquele banco. O Atlas
+  M0 da Execucao (regiao EUROPE_NORTH) tambem esta provisionado, mas e aplicado so
+  localmente (root `atlas/` do repositorio Banco, ADR 0004 do Banco): o CI do Banco
+  nao o alcanca.
+- **Mercado Pago**: gateway real so em `Production` (Fake em `Development` e nos
+  testes). O Billing de producao usa as credenciais de teste (sandbox). O webhook
+  entra anonimo em `https://apimfiap.azure-api.net/billingserver/webhooks/mercadopago`
+  e e autenticado pela assinatura HMAC (`x-signature`).
+
+### Validacao no AKS (Fase 4, 2026-11-10)
+
+- `/health` e `/health/ready` dos servicos responderam 200.
+- **Saga ponta a ponta pelo APIM, com o gateway real do Mercado Pago**:
+  - cenario feliz (OS-20261110-95B066): cadastros, diagnostico, orcamento, aprovacao,
+    pagamento, reparo, `Finalizada`, estoque 10 -> 8;
+  - cenario de recusa: orcamento cancelado e 409 ao decidir de novo.
+- O pagamento sandbox foi feito no checkout do Mercado Pago, com o comprador de
+  teste. A criacao de pagamento direto pela API e recusada com `Unauthorized use of
+  live credentials`, porque a aplicacao e Checkout Pro.
+- **A prova do webhook `payment` e indireta**: so o handler do webhook consulta o
+  Mercado Pago por id, e a consulta, o `UPDATE` do pagamento e o evento
+  `PagamentoAprovado` aparecem em sequencia; o span de entrada do `POST` nao aparece
+  no New Relic.
+- **Nao exercitados na nuvem**: o estorno (inviavel no cenario) e o cancelamento pelo
+  staff; so foram exercitados localmente e nos testes.
+
+### Aprendizados da publicacao
+
+- O ingress com `use-regex` trata como regex todos os paths do host, e o catch-all da
+  API captura o `/healthz`; por isso a sonda do load balancer das portas 80 e 443 e TCP
+  (configurada no repositorio Infra).
+- A primeira analise da `main` de um projeto novo no SonarCloud devolve o gate `NONE` e
+  o job `Quality` falha; um re-run resolve.
+- Actions fixadas por SHA precisam ter as actions internas resolviveis: o
+  `trivy-action` `v0.28.0` chamava uma tag que sumiu; o pin atual e a `v0.36.0`.
+- Testes com o harness do MassTransit definem `TestTimeout`/`TestInactivityTimeout`: o
+  `Build & Test` do `release` pegou um teste instavel por causa do tempo de inatividade
+  padrao, curto. O `MassTransitIntegrationEventPublisherTests` do Billing ainda usa os
+  padroes do harness.
+
+### Roteiro de publicacao (referencia para reaplicar)
+
+Os nomes de variaveis, secrets e recursos abaixo vem dos arquivos deste repositorio e
+dos `CLAUDE.md`/READMEs dos repositorios
+[OficinaMecanica.Infra](../OficinaMecanica.Infra) e
+[OficinaMecanica.Banco](../OficinaMecanica.Banco).
+
+#### Pre-requisitos
 
 - **Conta Azure com a plataforma do ecossistema**, provisionada pelos repositorios
   `OficinaMecanica.Infra` e `OficinaMecanica.Banco` (AKS `aksfiap`, ACR `acrfiap`, Key
-  Vault `kvfiap`, APIM `apimfiap` e o servidor SQL `svsfiap`). As partes novas dos
+  Vault `kvfiap`, APIM `apimfiap` e o servidor SQL `svsfiap`). As partes dos
   microsservicos (o `BillingDb` e o usuario `app_billing`, o RabbitMQ no namespace
-  `messaging`, os segredos do Billing, a rota `billingserver` e a identidade OIDC) so
-  existem depois de aplicar esses dois repositorios, e nenhum deles foi aplicado nas
-  versoes com os novos servicos. **Ordem: Banco antes do Infra, Infra antes do deploy
-  dos servicos** (aplicar o Infra antes de o usuario `app_billing` existir troca as
-  connection strings por um login inexistente). O bootstrap do Banco esta na secao
-  "Ordem de aplicacao e bootstrap" do `CLAUDE.md` do `OficinaMecanica.Banco`.
+  `messaging`, os segredos do Billing, a rota `billingserver` e a identidade OIDC)
+  vem da aplicacao desses dois repositorios. **Ordem: Banco antes do Infra, Infra antes
+  do deploy dos servicos** (aplicar o Infra antes de o usuario `app_billing` existir
+  troca as connection strings por um login inexistente). O bootstrap do Banco esta na
+  secao "Ordem de aplicacao e bootstrap" do `CLAUDE.md` do `OficinaMecanica.Banco`.
 - **SonarCloud**: uma organizacao e um projeto para este repositorio, um token
   (`SONAR_TOKEN`), e os valores para as variaveis `SONAR_PROJECT_KEY` e
   `SONAR_ORGANIZATION`.
@@ -991,12 +1071,12 @@ vierem a ser marcadas precisam ser resolvidas antes da publicacao.
 - **Ferramentas**: `git`, GitHub CLI (`gh`) autenticada com permissao de administracao
   no repositorio, e bash.
 
-### Passos, na ordem
+#### Passos, na ordem
 
 1. **Actions fixadas por SHA** (feito em 2026-11-09; ver
    [Limitacoes](#10-limitacoes-conhecidas-e-pendencias)): o `.github/workflows/ci.yml`
    usa o SHA completo de cada action, com a versao num comentario ao lado, e o
-   Dependabot mantem os SHAs. Nada a fazer neste passo.
+   Dependabot mantem os SHAs.
 2. **Criar o repositorio no GitHub** (`willianrmattos/OficinaMecanica.Billing`, o nome
    que os scripts e o Terraform esperam), ainda vazio e **sem empurrar nada**.
 3. **Aplicar o Banco e depois o Infra** (nessa ordem). O primeiro `terraform apply` do
@@ -1029,33 +1109,44 @@ vierem a ser marcadas precisam ser resolvidas antes da publicacao.
    | Secret | `SONAR_TOKEN` | Token do SonarCloud. Criar **tambem** em Settings > Secrets > Dependabot: os PRs do Dependabot nao enxergam os secrets de Actions |
 
    (`gh variable set` e `gh secret set` fazem o mesmo pela linha de comando.)
-5. **Criar o projeto no SonarCloud** e confirmar a organizacao.
+5. **Criar o projeto no SonarCloud** e confirmar a organizacao. A primeira analise da
+   `main` devolve o gate `NONE` e o job `Quality` falha: um re-run resolve.
 6. **Enviar as branches e abrir o primeiro PR para `release`.** As branches `main` e `release`
-   locais so tem o commit inicial (sem workflow), entao empurra-las nao dispara nada
+   iniciais so tinham o commit inicial (sem workflow), entao empurra-las nao dispara nada
    (`git remote add origin <url do repositorio>`). Em seguida, empurrar a branch de funcionalidade
-   (`feature/microsservicos`) e abrir o PR **para `release`**: o CI roda pela primeira vez
-   (`Build & Test` e `Quality`; PR nao toca o Azure nem publica imagem). Esses dois checks dependem
-   das variaveis e do secret do passo 4.
+   e abrir o PR **para `release`**: o CI roda (`Build & Test` e `Quality`; PR nao toca o Azure nem
+   publica imagem). Esses dois checks dependem das variaveis e do secret do passo 4.
 7. **Criar o ruleset de protecao de branch**, depois que o CI ja rodou ao menos uma vez
    (o GitHub so oferece como obrigatorio um check que ja apareceu; com o ruleset ativo, push direto
-   em `main`/`release` passa a ser recusado). O repositorio ainda nao existe no GitHub, entao e
-   uma criacao (POST), com o JSON versionado como entrada da GitHub CLI autenticada com permissao
-   de administracao no repositorio:
+   em `main`/`release` passa a ser recusado). Em um repositorio sem ruleset, e uma criacao (POST),
+   com o JSON versionado como entrada da GitHub CLI autenticada com permissao de administracao no
+   repositorio:
    `gh api --method POST repos/willianrmattos/OficinaMecanica.Billing/rulesets --input .github/rulesets/protect-main-release.json`.
+   O ruleset `protect-main-release` ja existe neste repositorio (id 26904123); para reaplicar o
+   JSON sobre ele, use `--method PUT` e `rulesets/26904123` no lugar de `--method POST` e `rulesets`.
    O job `Quality` exige o `SONAR_TOKEN` (passo 4): sem ele o check reprova e, exigido pelo
    ruleset, bloqueia todo PR.
 8. **Merge do PR em `release`.** O push em `release` dispara `Scan Image`, `Build & Push` e
-   `Deploy to AKS` **pela primeira vez**: imagem no ACR, migration no `BillingDb` real e rollout no
-   Deployment do cluster (homologacao e producao compartilham o mesmo cluster). Antes do merge,
-   conferir a folga de CPU do no (`kubectl describe node`), o RabbitMQ no namespace `messaging` e os
-   cinco segredos do Billing no Key Vault. Depois, verificar o rollout e a prontidao
-   (`/health/ready`).
+   `Deploy to AKS`: imagem no ACR, migration no `BillingDb` real e rollout no Deployment do
+   cluster (homologacao e producao compartilham o mesmo cluster). Antes do merge, conferir a folga de
+   CPU do no (`kubectl describe node`), o RabbitMQ no namespace `messaging` e os cinco segredos do
+   Billing no Key Vault. Depois, verificar o rollout e a prontidao (`/health/ready`).
 9. **PR de `release` para `main`** (o merge e feito pelo responsavel pelo repositorio). O push em
    `main` repete o pipeline de publicacao e tambem grava a tag `:latest`.
-10. **Depois do primeiro deploy** (fora do repositorio): cadastrar na aplicacao do Mercado Pago a
-    URL do webhook (saida `mercadopago_webhook_url` do Terraform do Infra,
-    `<gateway da APIM>/billingserver/webhooks/mercadopago`); confirmar a premissa de path da APIM
-    chamando `/billingserver/health` e, depois do apply do `OficinaMecanica.Infra`, confirmar que a
-    policy de la devolve 404 para `/health/ready` e `/metrics` vindos de fora (chamar
-    `/billingserver/health/ready`; ver [Limitacoes](#10-limitacoes-conhecidas-e-pendencias)); e fazer
-    um pagamento de teste em sandbox de ponta a ponta com o OS Service e o RabbitMQ do cluster.
+10. **Depois do deploy** (fora do repositorio): a URL do webhook e a saida
+    `mercadopago_webhook_url` do Terraform do Infra,
+    `<gateway da APIM>/billingserver/webhooks/mercadopago`; conferir a premissa de path da APIM
+    chamando `/billingserver/health` e fazer um pagamento de teste em sandbox de ponta a ponta com
+    o OS Service e o RabbitMQ do cluster (foi o que a validacao de 2026-11-10 fez).
+
+### Pendencias abertas
+
+- **Ruleset do OS Service e do Seguranca** passarem a exigir `Quality` (ja exigido neste
+  repositorio).
+- **Policy da APIM que bloqueia `/health/ready` e `/metrics` na rota publica**: esta no
+  Terraform do `OficinaMecanica.Infra` (ADR 0007), mas hoje os dois endpoints respondem
+  200 pela APIM em todos os servicos, inclusive em `billingserver`.
+- **Autorizacao so por JWT valido**, sem papeis (ver [secao 10](#10-limitacoes-conhecidas-e-pendencias)).
+- **MassTransit 8 sem suporte oficial apos 2026** e **.NET 8 LTS ate novembro de 2026**.
+- **Estorno e cancelamento pelo staff** nao exercitados na nuvem, e prova do webhook
+  `payment` so indireta (ver "Validacao no AKS" acima).

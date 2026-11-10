@@ -19,8 +19,18 @@ gateways Mercado Pago/Fake, validador de assinatura, metricas, reconciliador, JW
 Swagger, `/health`, `/metrics`), `Dockerfile`, `docker-compose.yml`, ADRs, os testes (unitarios, pipeline HTTP e
 infraestrutura com Testcontainers) e o CI/CD (`.github/`), os manifests (`k8s/billing/`), a protecao de branch
 versionada e os scripts de `scripts/`. O `README.md` e o `docs/relatorios/cobertura.md` estao prontos. Os contratos sao a copia dos contratos do OS Service.
-O repositorio ainda nao existe no GitHub: o CI/CD foi validado so localmente (`actionlint`, `kubeconform`, `docker build`,
-execucao dos scripts e do `ci-local.sh`); a primeira execucao real do workflow acontece na publicacao.
+**Publicado em 2026-11-09/10**: repositorio `willianrmattos/OficinaMecanica.Billing`, PRs #1 e #2 mergeados em `release` e o #3
+de `release` para `main`; os pipelines de `main` ficaram verdes (Build & Test, Quality/SonarCloud, Scan Image/Trivy, Build & Push no
+ACR e Deploy no AKS). No AKS (`aksfiap`) o Billing roda com 2 replicas, atras da rota `billingserver` da APIM (`apimfiap`), com o
+gateway real do Mercado Pago em `Production` usando as credenciais de teste (sandbox); o webhook entra anonimo em
+`https://apimfiap.azure-api.net/billingserver/webhooks/mercadopago` e e autenticado pela assinatura HMAC (`x-signature`). Banco: Azure
+SQL `BillingDb` com usuario SQL dedicado. Cobertura no Sonar (`main`): 95,3% (script local: 99,60%).
+**Validacao no AKS (2026-11-10)**: `/health` e `/health/ready` em 200; Saga ponta a ponta pelo APIM com o gateway real (cenario feliz
+OS-20261110-95B066 e cenario de recusa) passou. O pagamento sandbox foi feito no checkout do Mercado Pago com o comprador de teste
+(a criacao de pagamento pela API e recusada com `Unauthorized use of live credentials`: a aplicacao e Checkout Pro). A prova do webhook
+`payment` e **indireta** (so o handler do webhook consulta o Mercado Pago por id; a consulta, o `UPDATE` e o `PagamentoAprovado` aparecem
+em sequencia; o span de entrada do `POST` nao aparece no New Relic). Estorno e cancelamento pelo staff NAO foram exercitados na nuvem
+(so local e nos testes). Registro e roteiro de reaplicacao em `README.md`, secao 11.
 
 ## Estrutura do Projeto
 
@@ -188,9 +198,9 @@ command/DTO do gateway ficam em `Application.Tests/Builders` (nao em `Tests.Comm
   `rabbitmq` por `Health__ProntidaoCacheSegundos` (padrao **5 s**; 0 desliga, e os testes de infraestrutura usam 0 para ver cada queda na hora):
   as requisicoes simultaneas esperam uma unica avaliacao e excecao/cancelamento nunca e guardado. O custo fica limitado a 1 conexao SQL + 1 AMQP a cada
   5 s, qualquer que seja a taxa de requisicoes; o cache e menor que o `periodSeconds` da readiness (30 s), entao cada probe ve uma medicao nova. O corpo
-  so traz nome, status e descricao fixa dos checks. **Mitigacao no Infra (policy escrita, ainda nao aplicada)**: a policy da APIM que devolve 404 para
-  `/health/ready` e `/metrics` vindos de fora existe no `OficinaMecanica.Infra` (`apim/bloqueio-health-ready-e-metrics.xml`, ADR 0007 de
-  la) e fica ativa quando o Terraform do Infra for aplicado (ainda nao foi: ate la a APIM so repassa); a probe do Kubernetes bate direto
+  so traz nome, status e descricao fixa dos checks. **Mitigacao no Infra (pendente)**: a policy da APIM que devolve 404 para
+  `/health/ready` e `/metrics` vindos de fora esta no Terraform do `OficinaMecanica.Infra` (`apim/bloqueio-health-ready-e-metrics.xml`, ADR 0007 de
+  la), mas em 2026-11-10 os dois endpoints ainda respondem 200 pela APIM em todos os servicos (a APIM repassa); a probe do Kubernetes bate direto
   no pod e nunca passa pela APIM.
   **Auto-pause do Azure SQL serverless**: a readiness NAO e o que o impede. O outbox do MassTransit consulta o banco a cada `Mensageria__OutboxQueryDelayMs`
   (1000 ms) com o pod de pe; o `periodSeconds: 30` so reduz a carga das probes.
@@ -236,7 +246,7 @@ curto, adaptador com normalizacao/404/4xx e sem corpo do SDK em mensagem, consum
 
 - **CI/k8s**: entregue (secao "CI/CD e Kubernetes" abaixo). O Deployment usa `ASPNETCORE_ENVIRONMENT=Production` (nunca
   `Development`: habilitaria migration automatica e o gateway Fake), RabbitMq + EntityFramework e
-  `OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE=delta`. O que sobra e da publicacao (lista no fim da secao).
+  `OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE=delta`. Publicado em 2026-11-09/10; o que continua aberto esta na lista "Publicacao" no fim da secao "CI/CD e Kubernetes" e no `README.md` (secoes 10 e 11).
 - **Pendente**: a metrica/alerta do broker e do outbox (gauge de mensagens pendentes no outbox e alerta de
   `rabbitmq` `Degraded` por mais de N minutos): hoje o Degraded so aparece no corpo de `/health/ready`.
 - **Requisito cruzado (saga do OS Service)**: o estorno automatico por aprovacao tardia faz o Billing emitir
@@ -265,7 +275,7 @@ para outro (ACR, imagem, AKS, Key Vault, secret da connection string, pastas, pr
 | `build-and-push-image` | idem, `needs: scan-image` | `id-token: write`; so actions do GitHub/Microsoft: baixa o artifact, `docker load`, `azure/login` (OIDC), `az acr login`, push da MESMA imagem escaneada (sem rebuild); tags `oficinamecanica-billing:<sha>` sempre e `:latest` so na `main` |
 | `deploy-to-aks` | idem, `needs: build-and-push-image`; `concurrency: deploy-aks-billing` (`cancel-in-progress: false`: `main` e `release` fazem deploy no mesmo Deployment e enfileiram) | OIDC, **migrations** (`dotnet ef database update` com a connection string lida do Key Vault `billing-sql-connection-string`, ate 5 tentativas por causa do serverless), `aks-set-context` (admin, `rgfiap`/`aksfiap`), `envsubst '${IMAGE}'` (com guarda `${IMAGE:?}`: imagem vazia falha antes do apiserver), `kubectl apply`, `set image`, `rollout status` (300 s). Namespace `default` |
 
-**O que o repositorio do GitHub precisa ter (Settings > Secrets and variables > Actions) quando existir:**
+**O que o repositorio do GitHub precisa ter (Settings > Secrets and variables > Actions); ja configurado (os pipelines de `main` passam):**
 
 | Tipo | Nome | Valor |
 |---|---|---|
@@ -284,7 +294,7 @@ tocam o Azure). Os valores reais do Mercado Pago, do RabbitMQ e do banco vivem s
 | `ci-local.sh [--sem-infra]` | roda localmente os mesmos passos do `Build & Test` (restore, build, guardrail, k8s, OpenAPI, testes, cobertura com gate); `--sem-infra` pula o Testcontainers e, sem a cobertura completa, nao avalia o gate |
 | `cobertura.sh [fase]` | `tudo` (padrao), `testes-sem-infra`, `testes-infra`, `relatorio`; cada projeto roda uma vez com OpenCover + `.trx`; `COBERTURA_MINIMA` (80) e `COBERTURA_SEM_BUILD=true` (CI) |
 | `verificar-cobertura.sh <Summary.txt> [min]` | o gate: falha (exit 1) abaixo do minimo; calcula de `Covered lines`/`Coverable lines` (nao do `Line coverage`, que o ReportGenerator arredonda: 79,95% apareceria como 80%); vale para o numero "com exclusoes" |
-| `testar-scripts.sh [--sem-mutantes]` | **72 casos e 33 mutantes.** Testa com entradas sinteticas o gate (79,9% reprova, 80,0% aprova, numero ausente = exit 2, `COBERTURA_MINIMA` vazio = 80), o guardrail (MassTransit/`MassTransit.EntityFrameworkCore` 9.x direto e transitivo = exit 1, so 8.x = 0) e o `verificar-workflow.sh` (workflows sinteticos com a action do Trivy no job de push = exit 1, e o `ci.yml` real = 0); exercita de ponta a ponta o `cobertura.sh relatorio` sobre um OpenCover sintetico (79% reprova, 81% aprova, o gate vale para o numero "com exclusoes" de Migrations/`Program.cs`/`DependencyInjection*`/EF Configurations, o aviso de `[ExcludeFromCodeCoverage]` lista o arquivo de `src/` (fora de `obj/`) e conta 2 no resumo, fase invalida e relatorio sem OpenCover = exit 2: prova que o gate esta LIGADO ao relatorio) e o valor do gate no CI (o `ci.yml` exporta `COBERTURA_MINIMA: "80"`; um mutante troca por 10 numa copia do `ci.yml` e o caso reprova), o `validar-k8s.sh` (kubeconform em Docker sobre manifests sinteticos; pulado com aviso sem Docker), o `exportar-swagger.sh --verificar` (com um `dotnet` de mentira: em dia aprova, divergente/sem `docs/openapi.json` reprova, argumento invalido = exit 2) e o `ci-local.sh` (argumento invalido = exit 2), e confere que `ci.yml` e `ci-local.sh` chamam os mesmos passos. Depois planta 32 defeitos em copias fora do repo (gate que sai 0, minimo padrao 0, guardrail que aceita o major 9, verificador que libera `aquasecurity/*`, chamada do gate apagada do `cobertura.sh`, cada filtro de exclusao removido, `-strict` retirado...) exigindo que cada um seja detectado. Roda no `Build & Test` e no `ci-local.sh`; e por ele que o `verificar-workflow.sh` entra no CI e no ci-local; ~2,5 min |
+| `testar-scripts.sh [--sem-mutantes]` | **70 casos e 33 mutantes** (medido em 2026-11-10). Testa com entradas sinteticas o gate (79,9% reprova, 80,0% aprova, numero ausente = exit 2, `COBERTURA_MINIMA` vazio = 80), o guardrail (MassTransit/`MassTransit.EntityFrameworkCore` 9.x direto e transitivo = exit 1, so 8.x = 0) e o `verificar-workflow.sh` (workflows sinteticos com a action do Trivy no job de push = exit 1, e o `ci.yml` real = 0); exercita de ponta a ponta o `cobertura.sh relatorio` sobre um OpenCover sintetico (79% reprova, 81% aprova, o gate vale para o numero "com exclusoes" de Migrations/`Program.cs`/`DependencyInjection*`/EF Configurations, o aviso de `[ExcludeFromCodeCoverage]` lista o arquivo de `src/` (fora de `obj/`) e conta 2 no resumo, fase invalida e relatorio sem OpenCover = exit 2: prova que o gate esta LIGADO ao relatorio) e o valor do gate no CI (o `ci.yml` exporta `COBERTURA_MINIMA: "80"`; um mutante troca por 10 numa copia do `ci.yml` e o caso reprova), o `validar-k8s.sh` (kubeconform em Docker sobre manifests sinteticos; pulado com aviso sem Docker), o `exportar-swagger.sh --verificar` (com um `dotnet` de mentira: em dia aprova, divergente/sem `docs/openapi.json` reprova, argumento invalido = exit 2) e o `ci-local.sh` (argumento invalido = exit 2), e confere que `ci.yml` e `ci-local.sh` chamam os mesmos passos. Depois planta 33 defeitos em copias fora do repo (gate que sai 0, minimo padrao 0, guardrail que aceita o major 9, verificador que libera `aquasecurity/*`, chamada do gate apagada do `cobertura.sh`, cada filtro de exclusao removido, `-strict` retirado...) exigindo que cada um seja detectado. Roda no `Build & Test` e no `ci-local.sh`; e por ele que o `verificar-workflow.sh` entra no CI e no ci-local; ~2,5 min |
 | `verificar-masstransit.sh` | falha se qualquer pacote `MassTransit*`, direto ou transitivo, resolver para major diferente de 8 |
 | `verificar-workflow.sh [ci.yml]` | falha (exit 1) se um job que declara `id-token` executa action fora de `actions/*` e `azure/*`, ou se `id-token`/`write-all` esta no nivel do workflow; ignora comentarios do YAML; exit 2 para arquivo ausente/sem jobs |
 | `exportar-swagger.sh [--verificar] [--sem-build]` | `swagger tofile` (ferramenta fixada em `dotnet-tools.json`) para `docs/openapi.json`; com `--verificar` gera em `artifacts/openapi.json` e falha se o versionado difere |
@@ -295,11 +305,11 @@ tocam o Azure). Os valores reais do Mercado Pago, do RabbitMQ e do banco vivem s
   `Production` (o controller de simulacao so existe em `Development`). O arquivo e gravado com LF (`.gitattributes` fixa `docs/openapi.json`
   e `*.sh` em LF).
 - **Protecao de branch**: `.github/rulesets/protect-main-release.json` (alvo `main` e `release`; `deletion`, `non_fast_forward`,
-  `pull_request` com 0 aprovacoes e merge/squash/rebase, `required_status_checks` com `Build & Test` e `Quality`). Replica o ruleset dos
-  outros repositorios (aqui sem acesso ao GitHub para comparar: confirmar na publicacao). Nao ha script para aplica-lo: o JSON versionado e
-  a entrada direta da GitHub CLI, executada pelo usuario na publicacao (repositorio ainda inexistente, entao e **criar**, e so depois do
-  primeiro CI, porque o GitHub so oferece como obrigatorio um check que ja apareceu):
+  `pull_request` com 0 aprovacoes e merge/squash/rebase, `required_status_checks` com `Build & Test` e `Quality`). Nao ha script para aplica-lo: o JSON versionado e
+  a entrada direta da GitHub CLI, executada pelo usuario depois do primeiro CI (o GitHub so oferece como obrigatorio um check que ja apareceu):
   `gh api --method POST repos/willianrmattos/OficinaMecanica.Billing/rulesets --input .github/rulesets/protect-main-release.json`.
+  **Ativo hoje** (conferido em 2026-11-10): ruleset `protect-main-release` (id 26904123) em `main` e `release`, exigindo `Build & Test` e `Quality`;
+  para reaplicar o JSON sobre ele, `--method PUT` e `rulesets/26904123` no lugar de `--method POST` e `rulesets`.
   O `testar-scripts.sh` confere que os contextos do JSON sao `name` de jobs do `ci.yml`.
 - **Dependabot**: nuget, github-actions e docker, semanal; ignora major de `MassTransit*` (9.x e comercial), de
   `Microsoft.EntityFrameworkCore*` (continua em 9.x por causa do `net8.0`) e das imagens base `dotnet/aspnet`/`dotnet/sdk`.
@@ -331,14 +341,16 @@ tocam o Azure). Os valores reais do Mercado Pago, do RabbitMQ e do banco vivem s
 `exportar-swagger.sh`, os projetos e filtros de `cobertura.sh` e `coverage.runsettings`, `K8S_DIR`/imagem em `validar-k8s.sh`, o `owner/repo` do
 comando `gh api` do ruleset; os nomes, labels e a lista de secrets dos manifests; o MassTransit/EF/Mongo do guardrail e do Dependabot conforme o servico.
 
-**Fica para a publicacao**: criar o repositorio `willianrmattos/OficinaMecanica.Billing` e empurrar as branches (`main` e `release` locais so tem o commit inicial, sem
-workflow, entao nao disparam nada), depois empurrar a branch de funcionalidade e abrir o PR para `release` (o CI roda no PR; imagem e deploy so no merge
-em `release`; o merge de `release` em `main` e do usuario); preencher `billing_github_repo_id` no
-`OficinaMecanica.Infra` (aplicar) e configurar as variaveis OIDC; criar o secret `SONAR_TOKEN` e as variaveis do Sonar (e o projeto no
-SonarCloud); rodar uma vez o CI para os checks existirem e entao criar o ruleset
-(`gh api --method POST repos/willianrmattos/OficinaMecanica.Billing/rulesets --input .github/rulesets/protect-main-release.json`; sem o
-`SONAR_TOKEN` o job `Quality` reprova e, com ele exigido, bloqueia todo PR); confirmar a premissa da APIM (concatenacao do path do backend `/billing`) e, depois do apply do Infra, que a policy
-(ja existe la) devolve 404 para `/health/ready` e `/metrics` vindos de fora; `kubectl describe node` com folga de CPU antes do primeiro deploy.
+**Publicacao (feita em 2026-11-09/10)**: o repositorio `willianrmattos/OficinaMecanica.Billing` foi criado e as branches enviadas (`main` e `release`
+iniciais so tinham o commit inicial, sem workflow, entao nao dispararam nada); o PR #1 (funcionalidade) e o #2 (`trivy-action` v0.36.0) foram para
+`release` (o CI roda no PR; imagem e deploy so no merge em `release`) e o #3 levou `release` para `main` (o merge de `release` em `main` e do usuario).
+`billing_github_repo_id` foi preenchido e aplicado no `OficinaMecanica.Infra`, e as variaveis OIDC, o secret `SONAR_TOKEN` e as variaveis do Sonar
+foram configurados, com o projeto no SonarCloud. Regra aprendida: a primeira analise da `main` de um projeto novo no SonarCloud devolve o gate `NONE` e o job
+`Quality` falha; um re-run resolve. A premissa da APIM (concatenacao do path do backend `/billing`) vale: o webhook entra por `/billingserver/webhooks/mercadopago` e
+`/billingserver/health/ready` responde.
+**Continua aberto**: a policy da APIM que devolve 404 para `/health/ready` e `/metrics` vindos de fora (no Terraform do Infra, ADR 0007) nao esta
+bloqueando, e os dois endpoints respondem 200 pela APIM; o ruleset do OS Service e do Seguranca ainda nao exige `Quality`; autorizacao so por JWT valido
+(sem papeis); MassTransit 8 sem suporte apos 2026 e .NET 8 LTS ate novembro de 2026; estorno e cancelamento pelo staff nao exercitados na nuvem.
 
 ## Contratos
 

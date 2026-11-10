@@ -1,7 +1,9 @@
 # ADR 0003: CI/CD independente com gate de qualidade
 
 ## Status
-Aceito
+Aceito. Nota de 2026-11-10: publicado em 2026-11-09/10; o workflow roda no GitHub Actions e os pipelines de `main` ficaram
+verdes (Build & Test, Quality, Scan Image, Build & Push e Deploy no AKS). O Contexto e as Consequencias abaixo descrevem o
+estado de antes da publicacao e ficam como registro da decisao; o estado atual esta no `README.md` (secao 11).
 
 ## Contexto
 O Billing e um microsservico independente: repositorio, banco (`BillingDb`), credencial de banco dedicada, identidade
@@ -12,9 +14,9 @@ longa duracao. Este pipeline e o molde dos outros servicos (Execucao e OS Servic
 claras e as partes especificas do servico ficam isoladas em poucos pontos.
 
 Restricoes que moldam as escolhas: o MassTransit 9.x e comercial (o ecossistema fica no 8.x); o cluster tem um unico no
-sem CPU de requests sobrando; o Azure SQL e serverless (pausa por inatividade); o repositorio ainda nao existe no GitHub,
-entao tudo foi validado localmente (`actionlint`, `kubeconform`, `docker build` e execucao dos scripts) e a primeira
-execucao real do workflow acontece na publicacao.
+sem CPU de requests sobrando; o Azure SQL e serverless (pausa por inatividade); o repositorio ainda nao existia no GitHub na
+data da decisao, entao tudo foi validado localmente (`actionlint`, `kubeconform`, `docker build` e execucao dos scripts) e a primeira
+execucao real do workflow aconteceria na publicacao (feita em 2026-11-09/10).
 
 ## Decisao
 **Cinco jobs encadeados em `.github/workflows/ci.yml`:**
@@ -62,7 +64,7 @@ invalido sai com 2), e se confere que `ci.yml` e `ci-local.sh` chamam os mesmos 
 copia do `ci.yml`: reduzir o valor do gate no workflow nao pode passar despercebido). Cada script tem mutantes proprios (a chamada
 do gate apagada, o gate lendo o numero bruto, cada filtro de exclusao removido, `-strict` retirado, falha do kubeconform ignorada...).
 Os casos que dependem do Docker (kubeconform) sao pulados com aviso quando ele nao esta ligado. Na ultima execucao completa
-foram 72 casos e 33 mutantes detectados (o mesmo conjunto de casos do molde da Execucao; os mutantes a mais sao os filtros de
+foram 70 casos e 33 mutantes detectados (medido em 2026-11-10; os mutantes a mais, em relacao ao molde da Execucao, sao os filtros de
 exclusao de cobertura do Billing, um por padrao: Migrations, `Program.cs`, `DependencyInjection*` e EF Configurations).
 
 **SonarCloud com Quality Gate bloqueante.** O job `quality` baixa o OpenCover do job anterior (artifact), roda
@@ -113,7 +115,7 @@ Azure SQL serverless. A API em `Production` nunca migra sozinha.
 **Ruleset versionado e `Quality` obrigatorio.** `.github/rulesets/protect-main-release.json` replica a protecao dos demais
 repositorios (`main` e `release`: sem delete nem force-push, PR obrigatorio) e exige os checks `Build & Test` e `Quality`;
 nao ha script para aplica-lo: o JSON versionado e a entrada direta da GitHub CLI, executada manualmente na publicacao e so depois do
-primeiro CI (o GitHub so oferece como obrigatorio um check que ja apareceu):
+primeiro CI (o GitHub so oferece como obrigatorio um check que ja apareceu; o ruleset `protect-main-release` esta ativo em 2026-11-10):
 `gh api --method POST repos/willianrmattos/OficinaMecanica.Billing/rulesets --input .github/rulesets/protect-main-release.json`.
 Sem o `SONAR_TOKEN` o job `Quality` reprova e, exigido pelo ruleset, bloqueia todo PR.
 
@@ -163,7 +165,7 @@ dependencia nao pode reiniciar o pod) e `/health/ready` roda os checks da tag `r
 - Com uma replica e `maxSurge: 0` ha uma janela sem pod a cada deploy (ate o `startupProbe` passar); os comandos da saga
   esperam no RabbitMQ e o Mercado Pago reenvia o webhook que receber 5xx.
 - O runner do GitHub precisa alcancar o Azure SQL (regra de firewall do servidor), a mesma premissa do monolito.
-- Antes da publicacao o workflow so foi validado estaticamente e pelos scripts, e as actions estao fixadas por SHA sem que o
+- Antes da publicacao o workflow so foi validado estaticamente e pelos scripts (hoje roda no GitHub), e as actions estao fixadas por SHA sem que o
   conteudo de cada commit fixado tenha sido auditado (ver a decisao "Actions por SHA").
 - Desvio do plano (secao 8, "testes de Infra em job separado"): os testes de Infra rodam num step proprio do MESMO job
   `Build & Test`. O gate de cobertura exige o OpenCover de todos os projetos no mesmo workspace; um job de Infra reconstruiria
@@ -171,7 +173,7 @@ dependencia nao pode reiniciar o pod) e `/health/ready` roda os checks da tag `r
   o mesmo), e os nomes dos checks obrigatorios ficariam menos estaveis. O resultado de cada grupo continua separado por step,
   `.trx` e `dorny/test-reporter`. Se o tempo do `Build & Test` virar problema, a separacao e o proximo passo.
 - O `ci.yml` so tem testes para a separacao de privilegios (`verificar-workflow.sh`) e o `actionlint`: a ordem dos jobs e as
-  condicoes `if` so se provam na primeira execucao real.
+  condicoes `if` so se provavam na primeira execucao real (feita em 2026-11-09/10, com os pipelines de `main` verdes); continuam sem teste automatico.
 - **Broker fora nao tira o pod de rotacao**: com o RabbitMQ parado o `/health/ready` segue 200 e so o corpo mostra `rabbitmq`
   `Degraded`; quem monitora so sabe pelo corpo. O alerta (e um gauge de mensagens pendentes no outbox) ainda nao existe como
   metrica: fica pendente. Em contrapartida, banco fora derruba a prontidao (503) e o pod sai de rotacao ate o banco voltar; com o
@@ -179,8 +181,8 @@ dependencia nao pode reiniciar o pod) e `/health/ready` roda os checks da tag `r
 - **`/health/ready` anonimo exposto pela APIM**: a rota repassa qualquer path, entao qualquer cliente da internet pode chamar
   `/billingserver/health/ready`. O cache de 5 s limita o custo a uma conexao SQL e uma AMQP a cada 5 s e o corpo nao vaza
   excecao, mas o endpoint continua publico. Mitigacao no `OficinaMecanica.Infra` (ADR 0007 de la): a policy da APIM que devolve 404
-  para `/health/ready` e `/metrics` na rota publica existe e fica ativa quando o Terraform do Infra for aplicado (ainda nao foi);
-  a probe do kubelet bate direto no pod e nunca passa pela APIM.
+  para `/health/ready` e `/metrics` na rota publica esta no Terraform do Infra, mas em 2026-11-10 `/health/ready` e `/metrics` ainda respondem 200 pela APIM em todos os servicos
+  (pendencia aberta); a probe do kubelet bate direto no pod e nunca passa pela APIM.
 
 ## Alternativas consideradas
 - **Pipeline unico para todos os servicos**: acopla os repositorios e contraria o requisito de CI/CD independente.

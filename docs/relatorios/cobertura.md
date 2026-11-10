@@ -13,9 +13,10 @@ Registro da cobertura de linhas e da contagem de testes do servico
 | Resultado dos testes | 983 executados, 983 aprovados, 0 falhas |
 | Gate do CI | cobertura de linhas **>= 80%** sobre o numero "com exclusoes" |
 
-> Esta medicao foi feita **localmente**. O CI no GitHub Actions ainda nao rodou (o
-> repositorio nao foi publicado); a evidencia equivalente do CI so existe depois da
-> primeira execucao (ver [Onde fica no CI](#onde-fica-no-ci)).
+> Esta medicao foi feita **localmente**, em 2026-11-08. O repositorio foi publicado em
+> 2026-11-09/10 e o CI roda no GitHub Actions; a evidencia equivalente do CI fica nos
+> artefatos de cada execucao (ver [Onde fica no CI](#onde-fica-no-ci)) e a do SonarCloud
+> na secao [SonarCloud](#sonarcloud).
 
 ## Resumo
 
@@ -138,11 +139,13 @@ arquivos. Depois da execucao, ficam disponiveis:
 - o **Job Summary** do run, com a tabela de cobertura e as ocorrencias de
   `[ExcludeFromCodeCoverage]`.
 
-**Ainda nao executado no GitHub**: nenhum desses artefatos existe ate a primeira
-execucao do pipeline.
+O pipeline roda no GitHub Actions desde 2026-11-09, e os pipelines de `main` ficaram
+verdes; esses artefatos sao gerados a cada execucao do `Build & Test`.
 
 ## SonarCloud
 
-- Badge/link do SonarCloud: **preencher apos a publicacao**
-- Cobertura e Quality Gate reportados pelo SonarCloud: **preencher apos a publicacao**
-  (o job `Quality` ainda nao rodou; depende da organizacao, do projeto e do `SONAR_TOKEN`)
+- Badge/link do SonarCloud: nao adicionado a este repositorio (a organizacao e o projeto vem de
+  `vars.SONAR_ORGANIZATION` e `vars.SONAR_PROJECT_KEY`; o token, de `secrets.SONAR_TOKEN`)
+- Cobertura reportada pelo SonarCloud na `main` (2026-11-10): **95,3%**. O numero do script
+  local, que vale para o gate de 80% do CI, e o de **99,60%** desta pagina (2026-11-08)
+- Quality Gate: o job `Quality` roda no CI e ficou verde nos pipelines de `main`
