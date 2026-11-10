@@ -338,13 +338,12 @@ jobs:
       # Reprova em vulnerabilidade HIGH/CRITICAL que ja tenha correcao publicada (ignore-unfixed: sem correcao
       # disponivel nao ha o que fazer no build). Tambem varre segredos esquecidos nas camadas.
       - name: Scan da imagem (Trivy)
-        uses: aquasecurity/trivy-action@915b19bbe73b92a6cf82a1bc12b087c9a19a5fe2 # v0.28.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: ${{ steps.meta.outputs.image }}
           format: table
           exit-code: "1"
           ignore-unfixed: true
-          vuln-type: os,library
           severity: HIGH,CRITICAL
 
       # A imagem aprovada viaja como artifact para o job de push: o que o Trivy escaneou e exatamente o que vai para o
