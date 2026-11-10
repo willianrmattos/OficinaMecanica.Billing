@@ -1,0 +1,46 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\OficinaMecanica.Billing.Application\OficinaMecanica.Billing.Application.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- MassTransit 9.x e comercial: a versao 8.5.12 e fixada de proposito (ver ADR 0004 do OficinaMecanica). -->
+    <PackageReference Include="MassTransit" Version="8.5.12" />
+    <PackageReference Include="MassTransit.EntityFrameworkCore" Version="8.5.12" />
+    <PackageReference Include="MassTransit.RabbitMQ" Version="8.5.12" />
+    <PackageReference Include="mercadopago-sdk" Version="3.7.1" />
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="8.0.0" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" Version="9.0.22" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Tools" Version="9.0.22">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <!-- Dependencias transitivas que o JwtBearer 8.0.0 e o Microsoft.Data.SqlClient 5.1.9 arrastam em versoes marcadas
+         como preteridas (IdentityModel 7.0.3: Legacy/CriticalBugs; MSAL 4.76.0: CriticalBugs; Azure.Identity 1.12.1) ou com
+         vulnerabilidade (JsonWebTokens e System.IdentityModel.Tokens.Jwt 7.0.3, GHSA-59j7-ghrg-fj52). Optei por fixar aqui
+         as versoes corrigidas da mesma linha, para a imagem de producao nao carregar pacote preterido. -->
+    <PackageReference Include="Microsoft.IdentityModel.Protocols" Version="7.7.1" />
+    <PackageReference Include="Microsoft.IdentityModel.Protocols.OpenIdConnect" Version="7.7.1" />
+    <PackageReference Include="Microsoft.IdentityModel.JsonWebTokens" Version="7.7.1" />
+    <PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="7.7.1" />
+    <PackageReference Include="Azure.Identity" Version="1.21.0" />
+    <PackageReference Include="Microsoft.Identity.Client" Version="4.92.0" />
+    <PackageReference Include="Microsoft.Identity.Client.Extensions.Msal" Version="4.92.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="OficinaMecanica.Billing.Integration.Tests" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,5 @@
+{
+  "billing": "billing-comandos",
+  "execucao": "execucao-comandos",
+  "saga": "os-saga"
+}

@@ -1,0 +1,25 @@
+{
+  "messageId": "00000000-0000-0000-0000-000000000001",
+  "ordemDeServicoId": "00000000-0000-0000-0000-000000000002",
+  "ocorridoEm": "2026-11-07T12:00:00+00:00",
+  "numero": "OS-20261107-ABC123",
+  "valorTotal": 192.30,
+  "validoAte": "2026-11-10T12:00:00+00:00",
+  "laudo": "Troca de \u00F3leo e filtro recomendada",
+  "servicos": [
+    {
+      "servicoId": "00000000-0000-0000-0000-000000000010",
+      "nome": "Troca de \u00F3leo",
+      "precoUnitario": 120.50,
+      "quantidade": 1
+    }
+  ],
+  "pecas": [
+    {
+      "pecaId": "00000000-0000-0000-0000-000000000011",
+      "nome": "Filtro de \u00F3leo",
+      "precoUnitario": 35.90,
+      "quantidade": 2
+    }
+  ]
+}

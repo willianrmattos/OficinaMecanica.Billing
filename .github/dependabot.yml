@@ -1,0 +1,40 @@
+version: 2
+
+updates:
+  - package-ecosystem: nuget
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    ignore:
+      # MassTransit 9.x e comercial; o ecossistema fica no 8.x gratuito (versao fixada em 8.5.12). O guardrail do CI
+      # (scripts/verificar-masstransit.sh) barra o 9.x mesmo que chegue por dependencia transitiva; aqui o Dependabot
+      # simplesmente nem propoe o salto de major. Patches e minors do 8.x continuam chegando.
+      - dependency-name: "MassTransit*"
+        update-types: ["version-update:semver-major"]
+      # O MassTransit.EntityFrameworkCore 8.5.12 exige EF Core 9.0.x e o projeto continua em net8.0: o EF Core 10 so
+      # existe para net10.0. A troca de major acontece junto da migracao de plataforma, nao por PR automatico.
+      - dependency-name: "Microsoft.EntityFrameworkCore*"
+        update-types: ["version-update:semver-major"]
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: docker
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 3
+    ignore:
+      # O alvo e net8.0 (LTS); a migracao para outra versao do .NET e uma decisao explicita, com ADR, e nao um PR
+      # automatico que trocaria a imagem base sem trocar o TargetFramework.
+      - dependency-name: "dotnet/aspnet"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "dotnet/sdk"
+        update-types: ["version-update:semver-major"]

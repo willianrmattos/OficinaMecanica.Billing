@@ -1,0 +1,17 @@
+# ClusterIP: a API so e alcancada pelo ingress-nginx (e, por ele, pela APIM); nada expoe o pod direto na internet.
+apiVersion: v1
+kind: Service
+metadata:
+  name: oficinamecanica-billing
+  namespace: default
+  labels:
+    app: oficinamecanica-billing
+spec:
+  type: ClusterIP
+  selector:
+    app: oficinamecanica-billing
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8080
+      protocol: TCP
