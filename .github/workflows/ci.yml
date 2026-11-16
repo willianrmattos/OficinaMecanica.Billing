@@ -473,7 +473,7 @@ jobs:
       # Azure RBAC de autorizacao dentro do cluster); exige a role "Azure Kubernetes Service Cluster Admin Role" na
       # identidade OIDC deste repositorio (modulo github_oidc_aks_app do OficinaMecanica.Infra).
       - name: Set AKS context
-        uses: azure/aks-set-context@c7eb093e5a5d47caa333f64974d5fd1cd4bf069d # v4.0.3
+        uses: azure/aks-set-context@883bdc8d8d1d0fd87e66cc4ba6f0b618f9eb5281 # v5.0.1
         with:
           resource-group: ${{ env.AKS_RESOURCE_GROUP }}
           cluster-name: ${{ env.AKS_CLUSTER }}
